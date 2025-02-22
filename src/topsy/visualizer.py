@@ -41,6 +41,10 @@ class VisualizerBase:
         self.show_colorbar = True
         self.show_scalebar = True
 
+        # initialize mouse position attributes
+        self.last_mouse_x = 0
+        self.last_mouse_y = 0
+
         self.canvas = canvas_class(visualizer=self, title="topsy")
 
         self._setup_wgpu()
@@ -63,6 +67,7 @@ class VisualizerBase:
 
         self._colorbar = colorbar.ColorbarOverlay(self, 0.0, 1.0, self.colormap_name, "TODO")
         self._scalebar = scalebar.ScalebarOverlay(self)
+        # self._colorslider = colorslider.ColorSliderOverlay(self)
 
         self._crosshairs = line.Line(self,
                                      [(-1, 0,0,0), (1, 0,0,0),
@@ -110,6 +115,12 @@ class VisualizerBase:
         dx_rotation_matrix = self._x_rotation_matrix(x_angle)
         dy_rotation_matrix = self._y_rotation_matrix(y_angle)
         self.rotation_matrix = dx_rotation_matrix @ dy_rotation_matrix @ self.rotation_matrix
+
+    def hover(self, dx, dy): # defines event for mouse hover
+        self.last_mouse_x += dx  # updates mouse position
+        self.last_mouse_y += dy
+        # print(f"Mouse position: {self.last_mouse_x}, {self.last_mouse_y}") # debugging
+        self.invalidate(DrawReason.CHANGE) # signals that the visualization needs updating because of this event
 
     @property
     def rotation_matrix(self):
@@ -240,7 +251,7 @@ class VisualizerBase:
                 self.device.queue.submit([command_encoder.finish()])
 
         if not self.vmin_vmax_is_set:
-            logger.info("Setting vmin/vmax")
+            logger.info("Setting vmin/vmax - testing")
             self._colormap.autorange_vmin_vmax()
             self.vmin_vmax_is_set = True
             self._refresh_colorbar()

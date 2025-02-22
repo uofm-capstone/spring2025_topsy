@@ -25,13 +25,15 @@ class VisualizerCanvasBase:
 
         super().__init__(*args, **kwargs)
 
-    def handle_event(self, event):
+    def handle_event(self, event): # lea
         if event['event_type']=='pointer_move':
             if len(event['buttons'])>0:
                 if len(event['modifiers'])==0:
                     self.drag(event['x']-self._last_x, event['y']-self._last_y)
                 else:
                     self.shift_drag(event['x']-self._last_x, event['y']-self._last_y)
+            else:
+                self.hover(event['x']-self._last_x, event['y']-self._last_y) # add event for mouse pointer moving (but not clicking/dragging)
             self._last_x = event['x']
             self._last_y = event['y']
         elif event['event_type']=='wheel':
@@ -47,6 +49,11 @@ class VisualizerCanvasBase:
         else:
             pass
         super().handle_event(event)
+
+    def hover(self, dx, dy): # Defines an event for mouse hovering
+        # print(f"Canvas Event: dx={dx}, dy={dy}") # debugging
+        self._visualizer.hover(dx, dy) # calls hover function from visualizer.py
+        self._visualizer.invalidate() # updates visualization
 
     def drag(self, dx, dy):
         self._visualizer.rotate(dx*0.01, dy*0.01)

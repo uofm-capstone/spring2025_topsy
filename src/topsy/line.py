@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 class Line:
     def __init__(self, visualizer: Visualizer, path, color, width):
         self._visualizer = visualizer
+        # self.position = np.array([0, 0, 0], dtype=np.float32) # adds a position attribute for the crosshair
 
         if path is not None:
             path = np.asarray(path, dtype=np.float32)
@@ -58,7 +59,8 @@ class Line:
             ("color", np.float32, 4),
             ("vp_size_pix", np.float32, 2),
             ("width_pix", np.float32),
-            ("padding", np.float32, 3)
+            ("padding", np.float32, 3),
+            ("position", np.float32, 3) # Declares position parameter type
         ])
 
         self._param_buffer = self._device.create_buffer(
@@ -71,6 +73,9 @@ class Line:
         self._params["transform"] = np.eye(4)
         self._params["color"] = self._color
         self._params["width_pix"] = self._width
+        # self._params["position"] = self.position # Initializes the position parameter
+        # print(f"Updating crosshair position: {self.position}")  # debugging - crosshair not following mouse
+        # self._device.queue.write_buffer(self._param_buffer, 0, self._params)
 
     def _setup_render_pipeline(self):
         self._bind_group_layout = self._device.create_bind_group_layout(
@@ -171,6 +176,7 @@ class Line:
                            target_texture_view: wgpu.GPUTextureView):
 
         self._params["vp_size_pix"] = target_texture_view.size[:2]
+        self._params["position"] = self.position # Updates position
 
         self._device.queue.write_buffer(self._param_buffer, 0, self._params)
 
