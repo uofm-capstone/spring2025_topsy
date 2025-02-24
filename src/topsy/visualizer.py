@@ -116,11 +116,43 @@ class VisualizerBase:
         dy_rotation_matrix = self._y_rotation_matrix(y_angle)
         self.rotation_matrix = dx_rotation_matrix @ dy_rotation_matrix @ self.rotation_matrix
 
-    def hover(self, dx, dy): # defines event for mouse hover
-        self.last_mouse_x += dx  # updates mouse position
-        self.last_mouse_y += dy
-        # print(f"Mouse position: {self.last_mouse_x}, {self.last_mouse_y}") # debugging
-        self.invalidate(DrawReason.CHANGE) # signals that the visualization needs updating because of this event
+    # for now just linearly shifts color map based on intensity of pixel under mouse (doesn't enhance contrast of darker/lighter areas)
+    # some quantities (iord, etc.) don't work/appear blank
+    def hover(self, dx, dy):
+        # update mouse position attributes
+        self.abs_x += dx # calculates absolute position by adding change in position to last position (delta x, delta y)
+        self.abs_y += dy
+
+        # get rendered image sample data (using off-screen texture to avoid limitations of get_sph_image - can only get called once per frame)
+        image = self.get_offscreen_image() # returns shape [height, width, 2]
+        img_height = image.shape[0] # assign image height and width
+        img_width = image.shape[1]
+        # convert absolute mouse position to pixel coords in rendered image
+        img_x = int(self.abs_x / self.canvas.width_physical * img_width)
+        img_y = int(self.abs_y / self.canvas.height_physical * img_height)
+        img_x = max(0, min(img_x, img_width - 1)) # make sure width and height within bounds
+        img_y = max(0, min(img_y, img_height - 1))
+
+        # get pixel data from image using the coords
+        pixel = image[img_y, img_x] # will be used to calculate intensity of the pixel
+        # calculating intensity - how dark or light a pixel is so that the color map adjusts based on intensity
+        intensity = pixel[0]
+
+        # setting new vmin/vmax (color scale limits) based on intensity
+        if intensity < 5000: # keep vmin/vmax the same if pixel is not intense enough (dark areas)
+            new_vmin = max(self._colormap.vmin - 0.5, 0) # make sure vmin doesn't go below 0
+            new_vmax = self._colormap.vmax
+        else: # bright areas
+            new_vmin = self._colormap.vmin 
+            new_vmax = min(self._colormap.vmax + 0.5, 12) # make sure vmax doesn't go above 12
+            
+        # print colormap change data
+        print(f"absolute mouse positions: ({self.abs_x:.2f}, {self.abs_y:.2f}) // pixel coords: ({img_x}, {img_y}) // intensity: {intensity:.3f} // old vmin: {self._colormap.vmin:.3f} // old vmax: {self._colormap.vmax:.3f} // new vmin: {new_vmin:.3f} // new vmax: {new_vmax:.3f}")
+        # update vmin/vmax
+        self.vmin = new_vmin
+        self.vmax = new_vmax
+
+        self.invalidate(DrawReason.CHANGE) # mark that the visualizer needs to be updated
 
     @property
     def rotation_matrix(self):
