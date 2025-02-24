@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import time
 import wgpu
+import math
 
 from contextlib import contextmanager
 
@@ -41,9 +42,9 @@ class VisualizerBase:
         self.show_colorbar = True
         self.show_scalebar = True
 
-        # initialize mouse position attributes
-        self.last_mouse_x = 0
-        self.last_mouse_y = 0
+        # initialize mouse absolute position attributes
+        self.abs_x = 0
+        self.abs_y = 0
 
         self.canvas = canvas_class(visualizer=self, title="topsy")
 
@@ -411,6 +412,48 @@ class VisualizerBase:
         else:
             im = np_im[:,:,0]
         return im
+
+    # Note: ChatGPT and Copilot used for debugging and explanations - tried to use get_sph_image to get color sample but get_sph_image can only be called once per frame
+    # visualizer already has offscreen attribute
+    # -> get offscreen texture (for calculating pixel intensity) in rg32float format
+    # -> returns numpy array where img data can be extracted from (height, width, pixel coords/values)
+    def get_offscreen_image(self) -> np.ndarray:
+        texture = self.render_texture
+        # because format "rg32float" uses 8 bytes per pixel
+        bytes_per_pixel = 8  
+        # calculate smallest multiple of 256 which can contain one row
+        bytes_per_row = math.ceil(self._render_resolution * bytes_per_pixel / 256) * 256
+
+        # from get_presentation_image, adapted for rg32float format
+        data = self.device.queue.read_texture(
+            {
+                'texture': texture,
+                'mip_level': 0,
+                'origin': (0, 0, 0)
+            },
+            {
+                'offset': 0,
+                'bytes_per_row': bytes_per_row,
+                'rows_per_image': self._render_resolution,
+            },
+            (self._render_resolution, self._render_resolution, 1)
+        )
+
+        # convert raw data to numpy array
+        full_buffer = np.frombuffer(data, dtype=np.float32)
+        
+        # calculate floats each row has
+        floats_per_pixel = 2 # rg32float has 2 floats per pixel
+        floats_per_row_required = self._render_resolution * floats_per_pixel
+        floats_per_row = bytes_per_row // 4  # 4 bytes per float
+
+        # get pixel data from each row
+        image = np.empty((self._render_resolution, self._render_resolution, floats_per_pixel), dtype=np.float32)
+        for i in range(self._render_resolution):
+            start = i * floats_per_row
+            end = start + floats_per_row_required
+            image[i] = full_buffer[start:end].reshape((self._render_resolution, floats_per_pixel))
+        return image
 
     def get_presentation_image(self) -> np.ndarray:
         texture = self.context.get_current_texture()
