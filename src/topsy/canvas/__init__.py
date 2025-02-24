@@ -51,6 +51,7 @@ class VisualizerCanvasBase:
         super().handle_event(event)
 
     def hover(self, dx, dy): # Defines an event for mouse hovering
+        # print(f"Canvas Event: dx={dx}, dy={dy}") # debugging
         self._visualizer.hover(dx, dy) # calls hover function from visualizer.py
         self._visualizer.invalidate() # updates visualization
 
