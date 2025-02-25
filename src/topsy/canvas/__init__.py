@@ -22,33 +22,82 @@ class VisualizerCanvasBase:
         # The below are dummy values that will be updated by the initial resize event
         self.width_physical, self.height_physical = 640,480
         self.pixel_ratio = 1
+        self.split_view = False  # New flag for split-screen mode
 
         super().__init__(*args, **kwargs)
 
-    def handle_event(self, event): # lea
-        if event['event_type']=='pointer_move':
-            if len(event['buttons'])>0:
-                if len(event['modifiers'])==0:
-                    self.drag(event['x']-self._last_x, event['y']-self._last_y)
+    def handle_event(self, event): #Handle UI interactions like mouse movement, clicks, and resizing. If split view is enabled, ensure interactions apply to the correct visualization.
+    
+        width_half = self.width_physical // 2  # Divide screen width in half
+
+        if event["event_type"] == "pointer_move":
+            if self.split_view:
+                # Determine which half of the screen the mouse is in
+                if event["x"] < width_half:
+                    # Left side (Primary visualization)
+                    self._visualizer.hover(event["x"] - self._last_x, event["y"] - self._last_y)
                 else:
-                    self.shift_drag(event['x']-self._last_x, event['y']-self._last_y)
+                    # Right side (Comparison visualization)
+                    dx_adjusted = event["x"] - width_half - self._last_x  # Adjust X for right view
+                    self._visualizer.hover(dx_adjusted, event["y"] - self._last_y)
+
             else:
-                self.hover(event['x']-self._last_x, event['y']-self._last_y) # add event for mouse pointer moving (but not clicking/dragging)
-            self._last_x = event['x']
-            self._last_y = event['y']
-        elif event['event_type']=='wheel':
-            self.mouse_wheel(event['dx'], event['dy'])
-        elif event['event_type']=='key_up':
-            self.key_up(event['key'])
-        elif event['event_type']=='resize':
-            self.resize_complete(event['width'], event['height'], event['pixel_ratio'])
-        elif event['event_type']=='double_click':
-            self.double_click(event['x'], event['y'])
-        elif event['event_type']=='pointer_up':
+                # Single visualization mode (Default)
+                self._visualizer.hover(event["x"] - self._last_x, event["y"] - self._last_y)
+
+            # Update last mouse position
+            self._last_x = event["x"]
+            self._last_y = event["y"]
+
+        elif event["event_type"] == "pointer_down":
+            # Handle mouse clicks (e.g., rotation, dragging)
+            if self.split_view:
+                if event["x"] < width_half:
+                    self._visualizer.drag(event["x"] - self._last_x, event["y"] - self._last_y)  # Left view
+                else:
+                    dx_adjusted = event["x"] - width_half - self._last_x  # Right view
+                    self._visualizer.drag(dx_adjusted, event["y"] - self._last_y)
+            else:
+                self._visualizer.drag(event["x"] - self._last_x, event["y"] - self._last_y)
+
+        elif event["event_type"] == "wheel":
+            # Handle zooming via mouse wheel
+            zoom_factor = np.exp(event["dy"] / 1000)
+            if self.split_view:
+                if event["x"] < width_half:
+                    self._visualizer.scale *= zoom_factor  # Left visualization
+                else:
+                    self._visualizer.scale *= zoom_factor  # Right visualization (optional sync)
+            else:
+                self._visualizer.scale *= zoom_factor  # Single view zoom
+
+        elif event["event_type"] == "key_up":
+            # Handle keyboard shortcuts
+            if event["key"] == "s":
+                self._visualizer.save()
+            elif event["key"] == "r":
+                self._visualizer.vmin_vmax_is_set = False
+                self._visualizer.invalidate()
+            elif event["key"] == "h":
+                self._visualizer.reset_view()
+
+        elif event["event_type"] == "resize":
+            # Ensure both views adjust correctly on resize
+            self.resize_complete(event["width"], event["height"], event["pixel_ratio"])
+            if self.split_view:
+                self._visualizer.invalidate(DrawReason.PRESENTATION_CHANGE)  # Force redraw in split mode
+
+        elif event["event_type"] == "double_click":
+            # Optional: Define behavior for double-clicks
+            self.double_click(event["x"], event["y"])
+
+        elif event["event_type"] == "pointer_up":
+            # Handle mouse release
             self.release_drag()
-        else:
-            pass
+
+        # Pass event handling to the base class
         super().handle_event(event)
+
 
     def hover(self, dx, dy): # Defines an event for mouse hovering
         # print(f"Canvas Event: dx={dx}, dy={dy}") # debugging
@@ -101,6 +150,9 @@ class VisualizerCanvasBase:
         self.height_physical = int(height*pixel_ratio)
         self.pixel_ratio = pixel_ratio
 
+        if self.split_view:
+            self._visualizer.invalidate(DrawReason.PRESENTATION_CHANGE)  # Force redraw for split mode
+
     def double_click(self, x, y):
         pass
 
@@ -108,6 +160,13 @@ class VisualizerCanvasBase:
     def call_later(cls, delay, fn, *args):
         raise NotImplementedError()
 
+    def enable_split_view(self): #Enable side-by-side rendering for two visualizations.
+        self.split_view = True
+        self.request_draw()
+
+    def disable_split_view(self): #Disable side-by-side rendering (single view mode).
+        self.split_view = False
+        self.request_draw()
 
 
 

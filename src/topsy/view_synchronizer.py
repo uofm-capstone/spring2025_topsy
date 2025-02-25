@@ -39,6 +39,9 @@ class ViewSynchronizer:
                 self._requires_update.append(view_weakref)
                 for var in self._synchronize:
                     setattr(view, var, getattr(source, var))
+                if source.show_comparison_view and hasattr(source, "comparison_texture"):
+                    view.comparison_texture = source.comparison_texture
+                    view.invalidate(DrawReason.PRESENTATION_CHANGE)
 
     def update_completed(self, view: Visualizer):
         """Called when a view knows it will not be attempting to perpetuate an update it received
@@ -64,6 +67,8 @@ class SynchronizationMixin:
         super().draw(reason, render_texture_view)
         if hasattr(self, "_view_synchronizer") and reason != DrawReason.REFINE:
             self._view_synchronizer.perpetuate_update(self)
+        if self.show_comparison_view:
+            self._view_synchronizer.perpetuate_update(self.comparison_texture)
 
     def synchronize_with(self, other: Visualizer):
         """Start synchronizing this visualizer with another"""
@@ -78,6 +83,9 @@ class SynchronizationMixin:
             vs = ViewSynchronizer()
             vs.add_view(self)
             vs.add_view(other)
+            
+        if self.show_comparison_view:
+            self._view_synchronizer.add_view(self.comparison_texture)
 
     def stop_synchronizing(self):
         """Stop synchronizing this visualizer with any other"""

@@ -30,8 +30,10 @@ class VisualizerBase:
 
     def __init__(self, data_loader_class = loader.TestDataLoader, data_loader_args = (),
                  *, render_resolution = config.DEFAULT_RESOLUTION, periodic_tiling = False,
-                 colormap_name = config.DEFAULT_COLORMAP, canvas_class = canvas.VisualizerCanvas):
+                 colormap_name = config.DEFAULT_COLORMAP, comparison_colormap_name = "inferno", canvas_class = canvas.VisualizerCanvas):
         self._colormap_name = colormap_name
+        self._comparison_colormap_name = "inferno"  # Secondary colormap
+        self.show_comparison_view = True  # Enable second visualization by default
         self._render_resolution = render_resolution
         self.crosshairs_visible = False
 
@@ -45,7 +47,8 @@ class VisualizerBase:
         self.last_mouse_x = 0
         self.last_mouse_y = 0
 
-        self.canvas = canvas_class(visualizer=self, title="topsy")
+        self.canvas = canvas_class(visualizer=self, title="topsy (dual view)")
+        self.canvas.enable_split_view()  # Ensure UI is in split mode
 
         self._setup_wgpu()
 
@@ -54,6 +57,7 @@ class VisualizerBase:
         self.periodicity_scale = self.data_loader.get_periodicity_scale()
 
         self._colormap = colormap.Colormap(self, weighted_average = False)
+        self._comparison_colormap = colormap.Colormap(self, weighted_average=False)
         self._periodic_tiling = periodic_tiling
 
         if periodic_tiling:
@@ -98,7 +102,7 @@ class VisualizerBase:
             # but for now, just stop the canvas being srgb
             self.canvas_format = self.canvas_format[:-5]
         self.context.configure(device=self.device, format=self.canvas_format)
-        self.render_texture: wgpu.GPUTexture = self.device.create_texture(
+        self.render_texture = self.device.create_texture(
             size=(self._render_resolution, self._render_resolution, 1),
             usage=wgpu.TextureUsage.RENDER_ATTACHMENT |
                   wgpu.TextureUsage.TEXTURE_BINDING |
@@ -106,6 +110,17 @@ class VisualizerBase:
             format=wgpu.TextureFormat.rg32float,
             label="sph_render_texture",
         )
+        self.comparison_texture = self.device.create_texture(
+            size=(self._render_resolution, self._render_resolution, 1),
+            usage=wgpu.TextureUsage.RENDER_ATTACHMENT |
+                wgpu.TextureUsage.TEXTURE_BINDING |
+                wgpu.TextureUsage.COPY_SRC,
+            format=wgpu.TextureFormat.rg32float,
+            label="comparison_render_texture",
+        )
+
+        self.synchronize_with(self)
+        self.synchronize_with(self.comparison_texture)
 
     def invalidate(self, reason=DrawReason.CHANGE):
         # NB no need to check if we're already pending a draw - wgpu.gui does that for us
@@ -244,25 +259,45 @@ class VisualizerBase:
             else:
                 ce_label += "_fullres"
 
-            command_encoder : wgpu.GPUCommandEncoder = self.device.create_command_encoder(label=ce_label)
+            # 1. Render the first visualization (Primary Colormap)
+            command_encoder = self.device.create_command_encoder(label=f"{ce_label}_primary")
             self._sph.encode_render_pass(command_encoder)
-
-            with self._render_timer:
-                self.device.queue.submit([command_encoder.finish()])
+            self.device.queue.submit([command_encoder.finish()])
+            
+            # 2. Render the second visualization (Comparison Colormap)
+            command_encoder = self.device.create_command_encoder(label=f"{ce_label}_comparison")
+            self._sph.encode_render_pass(command_encoder, target_texture_view=self.comparison_texture.create_view())
+            self.device.queue.submit([command_encoder.finish()])
 
         if not self.vmin_vmax_is_set:
             logger.info("Setting vmin/vmax - testing")
             self._colormap.autorange_vmin_vmax()
+            self._comparison_colormap.autorange_vmin_vmax()  # Ensure both colormaps adjust
             self.vmin_vmax_is_set = True
             self._refresh_colorbar()
 
         command_encoder = self.device.create_command_encoder()
 
         if target_texture_view is None:
-            target_texture_view = self.canvas.get_context().get_current_texture().create_view()
+            main_texture_view = self.canvas.get_context().get_current_texture().create_view()
+            comparison_texture_view = self.comparison_texture.create_view()
 
+        if self.canvas.split_view:
+            width = self.canvas.width_physical
+            height = self.canvas.height_physical
 
-        self._colormap.encode_render_pass(command_encoder, target_texture_view)
+            # Left half for main visualization
+            self.device.queue.submit([command_encoder.finish()])
+            self.canvas.get_context().set_viewport(0, 0, width // 2, height)
+            self._colormap.encode_render_pass(command_encoder, target_texture_view)
+
+            # Right half for comparison visualization
+            self.device.queue.submit([command_encoder.finish()])
+            self.canvas.get_context().set_viewport(width // 2, 0, width // 2, height)
+            self._comparison_colormap.encode_render_pass(command_encoder, comparison_texture_view)
+        else:
+            self._colormap.encode_render_pass(command_encoder, main_texture_view)
+
         if self.show_colorbar:
             self._colorbar.encode_render_pass(command_encoder, target_texture_view)
         if self.show_scalebar:

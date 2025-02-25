@@ -122,7 +122,11 @@ class PynbodyDataInMemory(AbstractDataLoader):
         return len(self.snapshot)
 
     def get_periodicity_scale(self):
-        return float(self.snapshot.properties['boxsize'].in_units("kpc"))
+        if "boxsize" in self.snapshot.properties:
+            return float(self.snapshot.properties['boxsize'].in_units("kpc"))
+        else:
+            logger.warning("Warning: 'boxsize' not found in snapshot properties. Using default value.")
+            return 100.0  # Set an appropriate default value (e.g., 100 kpc)
     def get_filename(self):
         return self.snapshot.filename
 
@@ -132,10 +136,14 @@ class PynbodyDataLoader(PynbodyDataInMemory):
                  take_region: Optional[pynbody.filt.Filter] = None):
 
         logger.info(f"Data filename = {filename}, center = {center}, particle = {particle}")
-        if take_region is None:
-            snapshot = pynbody.load(filename)
-        else:
-            snapshot = pynbody.load(filename, take_region=take_region)
+        try:
+            if take_region is None:
+                snapshot = pynbody.load(filename)
+            else:
+                snapshot = pynbody.load(filename, take_region=take_region)
+        except FileNotFoundError:
+            logger.error(f"Error: Could not find file {filename}. Please check the file path.")
+            raise
 
         snapshot.physical_units()
         self.filename = filename
@@ -145,7 +153,12 @@ class PynbodyDataLoader(PynbodyDataInMemory):
         super().__init__(device, snapshot)
 
         self._perform_centering(center)
-        snapshot.wrap()
+        if "boxsize" not in snapshot.properties:
+            logger.warning("Warning: 'boxsize' not found in snapshot properties. Setting a default value.")
+            snapshot.properties["boxsize"] = 100.0  # Adjust value as needed
+
+        snapshot.wrap()  # Now wrapping will not fail
+
         self._perform_smoothing()
 
     def _perform_centering(self, center):
