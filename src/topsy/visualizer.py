@@ -81,6 +81,9 @@ class VisualizerBase:
 
         self.invalidate(DrawReason.INITIAL_UPDATE)
 
+        self.projection_matrix = self.create_projection_matrix()
+        self.view_matrix = np.eye(4)
+
     def _setup_wgpu(self):
         self.adapter: wgpu.GPUAdapter = wgpu.gpu.request_adapter(power_preference="high-performance")
         if self.device is None:
@@ -443,6 +446,84 @@ class VisualizerBase:
         #else:
         #    raise RuntimeError("The wgpu library is using a gui backend that topsy does not recognize")
 
+    def create_projection_matrix(self, fov=60, aspect_ratio=1.0, near=0.1, far=1000.0):
+        """Creates a simple perspective projection matrix for 3D coordinate conversion."""
+        f = 1.0 / np.tan(np.radians(fov) / 2.0)
+        return np.array([
+            [f / aspect_ratio, 0,  0,                                  0],
+            [0,               f,  0,                                  0],
+            [0,               0,  (far + near) / (near - far),       -1],
+            [0,               0,  (2 * far * near) / (near - far),    0]
+        ], dtype=np.float32)
+    
+    def screen_to_world(self, x, y, screen_width, screen_height):
+        """Convert 2D screen space (x, y) to a 3D world space ray."""
+        
+        import numpy as np  # Ensure numpy is imported
+
+        # Step 1: Normalize screen coordinates to NDC (-1 to 1 range)
+        ndc_x = (2.0 * x) / screen_width - 1.0
+        ndc_y = 1.0 - (2.0 * y) / screen_height  # Flip Y-axis for OpenGL-style coordinates
+        
+        # Step 2: Convert to homogeneous clip space
+        clip_coords = np.array([ndc_x, ndc_y, -1.0, 1.0])  # Assume looking into -Z direction
+
+        # Step 3: Convert to eye space using inverse projection matrix
+        inv_projection = np.linalg.inv(self.projection_matrix)  
+        eye_coords = inv_projection @ clip_coords
+        eye_coords = np.array([eye_coords[0], eye_coords[1], -1.0, 0.0])  # Reset depth
+
+        # Step 4: Convert to world space using inverse view matrix
+        inv_view = np.linalg.inv(self.view_matrix)  
+        world_ray = inv_view @ eye_coords
+        world_ray = world_ray[:3]  # Extract 3D direction
+
+        # Normalize the ray direction
+        world_ray = world_ray / np.linalg.norm(world_ray)
+        
+        return world_ray
+    
+    def get_particle_positions(self):
+        """Retrieve all particle positions from the loaded simulation."""
+        if not hasattr(self, "data_loader"):
+            print("Error: No data loader found.")
+            return np.array([])
+
+        # Assuming `self.data_loader` has a function to get positions
+        return self.data_loader.get_positions()
+    
+    def find_nearest_particle(self, ray_origin, ray_direction):
+        """Find the closest particle along the given ray."""
+        import numpy as np
+
+        positions = self.get_particle_positions()
+        if positions.size == 0:
+            print("No particle positions available.")
+            return None
+
+        # Step 1: Compute the vector from the ray origin to each particle
+        ray_to_particles = positions - ray_origin
+
+        # Step 2: Project this vector onto the ray direction
+        projections = np.dot(ray_to_particles, ray_direction)
+
+        # Step 3: Compute perpendicular distance from ray to particles
+        closest_points = ray_origin + np.outer(projections, ray_direction)
+        distances = np.linalg.norm(positions - closest_points, axis=1)
+
+        # Step 4: Find the particle with the smallest perpendicular distance
+        min_index = np.argmin(distances)
+        min_distance = distances[min_index]
+
+        # Step 5: Define a selection threshold (adjust as needed)
+        selection_threshold = 0.05  # Adjust based on your simulation scale
+
+        if min_distance < selection_threshold:
+            print(f"Selected Particle {min_index} at {positions[min_index]} (Distance: {min_distance})")
+            return positions[min_index]  # Return the selected particle position
+
+        print("No particle selected.")
+        return None
 
 class Visualizer(view_synchronizer.SynchronizationMixin, VisualizerBase):
     pass

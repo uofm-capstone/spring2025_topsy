@@ -13,6 +13,7 @@ import os
 import time
 import logging
 import matplotlib as mpl
+import numpy as np
 
 from typing import TYPE_CHECKING, Optional
 
@@ -425,18 +426,28 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         call_later(delay, fn, *args)
 
     def handle_event(self, event):
-        """Capture mouse clicks inside WebGPU using pointer_down instead of mouse_down."""
-        print(f"Received event: {event}")  # Debugging: Print all events
-
+        """Capture mouse clicks and find the nearest particle in 3D space."""
         if isinstance(event, dict):
-            event_type = event.get("event_type", None)  # Correct key is "event_type" (not "type")
+            event_type = event.get("event_type", None)
 
-            if event_type:
-                print(f"Event type detected: {event_type}")  # Debugging step
-
-            if event_type == "pointer_down":  # WebGPU uses "pointer_down" for clicks
+            if event_type == "pointer_down":
                 x, y = event.get("x", 0), event.get("y", 0)
-                print(f"Mouse clicked at: ({x}, {y}) - Captured from WebGPU Event")
+                screen_width, screen_height = self.size().width(), self.size().height()
+
+                print(f"Mouse clicked at: ({x}, {y}) - Converting to 3D space...")
+
+                # Convert to world space ray
+                ray_direction = self._visualizer.screen_to_world(x, y, screen_width, screen_height)
+
+                # Assume camera position is at (0,0,0) in world space
+                ray_origin = np.array([0, 0, 0])
+
+                # Find the nearest particle
+                nearest_particle = self._visualizer.find_nearest_particle(ray_origin, ray_direction)
+
+                if nearest_particle is not None:
+                    print(f"Selected Particle at {nearest_particle}")
+
                 return True  # Mark event as handled
 
         return super().handle_event(event)  # Let other events continue
