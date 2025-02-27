@@ -193,6 +193,8 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         super().__init__(**kwargs)
         self._all_instances.append(self)
         self.hide()
+        
+        self.setMouseTracking(True)
 
         self._toolbar = QtWidgets.QToolBar()
         self._toolbar.setIconSize(QtCore.QSize(16, 16))
@@ -421,3 +423,20 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
     @classmethod
     def call_later(cls, delay, fn, *args):
         call_later(delay, fn, *args)
+
+    def handle_event(self, event):
+        """Capture mouse clicks inside WebGPU using pointer_down instead of mouse_down."""
+        print(f"Received event: {event}")  # Debugging: Print all events
+
+        if isinstance(event, dict):
+            event_type = event.get("event_type", None)  # Correct key is "event_type" (not "type")
+
+            if event_type:
+                print(f"Event type detected: {event_type}")  # Debugging step
+
+            if event_type == "pointer_down":  # WebGPU uses "pointer_down" for clicks
+                x, y = event.get("x", 0), event.get("y", 0)
+                print(f"Mouse clicked at: ({x}, {y}) - Captured from WebGPU Event")
+                return True  # Mark event as handled
+
+        return super().handle_event(event)  # Let other events continue
