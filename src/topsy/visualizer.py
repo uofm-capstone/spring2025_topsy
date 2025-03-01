@@ -5,6 +5,7 @@ import numpy as np
 import time
 import wgpu
 import math
+import time
 
 from contextlib import contextmanager
 
@@ -56,6 +57,12 @@ class VisualizerBase:
 
         self._colormap = colormap.Colormap(self, weighted_average = False)
         self._periodic_tiling = periodic_tiling
+
+        # maintain original min/max values for color shift to reference (instead of compounding based on updated vmin/vmax)
+        self.original_vmin = None # by default, vmin/vmax are set to 0/1 -> set to None initially, wait for autorange_vmin_vmax to set the colormap's original vmin/vmax
+        self.original_vmax = None
+        # self.original_vmin = 8 # hardcoded original vmin/vmax values for testing
+        # self.original_vmax = 0.5
 
         if periodic_tiling:
             self._sph = periodic_sph.PeriodicSPH(self, self.render_texture)
@@ -117,8 +124,13 @@ class VisualizerBase:
         dy_rotation_matrix = self._y_rotation_matrix(y_angle)
         self.rotation_matrix = dx_rotation_matrix @ dy_rotation_matrix @ self.rotation_matrix
 
-    # for now just linearly shifts color map based on intensity of pixel under mouse (doesn't enhance contrast of darker/lighter areas)
-    # some quantities (iord, etc.) don't work/appear blank
+    # This function, for now, linearly shifts the color map's limits based on intensity of pixel under mouse so that the contrast within darker/lighter areas is enhanced
+    # To do:
+    # 1. tweak colormap shifting (using a better function to enhance contrast of darker/lighter areas, iord and some other color maps don't work)
+    # 2. vmin/vmax capture is inconsistent, have to choose project density quantity a few times to get the correct vmin/vmax values
+    # 3. make toggleable
+    # 4. reduce amount of times hover triggers (and remove print statements)
+    # 5. make light area differences more pronounced (dark areas are already decently pronounced)
     def hover(self, dx, dy):
         # update mouse position attributes
         self.abs_x += dx # calculates absolute position by adding change in position to last position (delta x, delta y)
@@ -134,26 +146,56 @@ class VisualizerBase:
         img_x = max(0, min(img_x, img_width - 1)) # make sure width and height within bounds
         img_y = max(0, min(img_y, img_height - 1))
 
+        # maintain original vmin/vmax range
+        # v_range = self.original_vmax - self.original_vmin
+
         # get pixel data from image using the coords
         pixel = image[img_y, img_x] # will be used to calculate intensity of the pixel
         # calculating intensity - how dark or light a pixel is so that the color map adjusts based on intensity
         intensity = pixel[0]
 
+        # separate vmin/vmax shifting into separate function (currently sets vmin/vmax linearly based on intensity)
+        new_vmin, new_vmax = self.apply_shift(intensity) # returns new vmin and vmax
+
         # setting new vmin/vmax (color scale limits) based on intensity
-        if intensity < 5000: # keep vmin/vmax the same if pixel is not intense enough (dark areas)
-            new_vmin = max(self._colormap.vmin - 0.5, 0) # make sure vmin doesn't go below 0
-            new_vmax = self._colormap.vmax
-        else: # bright areas
-            new_vmin = self._colormap.vmin 
-            new_vmax = min(self._colormap.vmax + 0.5, 12) # make sure vmax doesn't go above 12
+        # if intensity < 5000: # keep vmin/vmax the same if pixel is not intense enough (dark areas)
+        #     new_vmin = max(self._colormap.vmin - 0.5, 0) # make sure vmin doesn't go below 0
+        #     new_vmax = self._colormap.vmax
+        # else: # bright areas
+        #     new_vmin = self._colormap.vmin 
+        #     new_vmax = min(self._colormap.vmax + 0.5, 12) # make sure vmax doesn't go above 12
             
         # print colormap change data
         print(f"absolute mouse positions: ({self.abs_x:.2f}, {self.abs_y:.2f}) // pixel coords: ({img_x}, {img_y}) // intensity: {intensity:.3f} // old vmin: {self._colormap.vmin:.3f} // old vmax: {self._colormap.vmax:.3f} // new vmin: {new_vmin:.3f} // new vmax: {new_vmax:.3f}")
+        
         # update vmin/vmax
         self.vmin = new_vmin
         self.vmax = new_vmax
 
+        # used for hover timeout (upon timeout, vmin/vmax will reset to original values)
+        self._last_hover_time = time.time()
+
         self.invalidate(DrawReason.CHANGE) # mark that the visualizer needs to be updated
+        
+        self.canvas.call_later(1.0, self.reset_colormap_hover) # runs reset_colormap function after 1 second
+
+    # shifts vmin/vmax based on intensity of pixel under mouse
+    def apply_shift(self, intensity):
+        if intensity < 10000: # for dark areas
+            new_vmin = max(self._colormap.vmin - 2, 0) # make sure vmin doesn't go below 0
+            new_vmax = self._colormap.vmax
+        else: # bright areas
+            new_vmax = min(self._colormap.vmax + 2, 12) # make sure vmax doesn't go above 12
+            new_vmin = self._colormap.vmin
+
+        return new_vmin, new_vmax
+
+    def reset_colormap_hover(self):
+        # reset vmin/vmax to original values when mouse hover hasn't triggered for a second
+        if time.time() - self._last_hover_time > 1: # if hover hasn't triggered for a second
+            self.vmin = self.original_vmin # set current vmin/vmax to original values
+            self.vmax = self.original_vmax
+            self.invalidate(DrawReason.CHANGE) # mark that the visualizer needs to be updated
 
     @property
     def rotation_matrix(self):
@@ -287,6 +329,10 @@ class VisualizerBase:
             logger.info("Setting vmin/vmax - testing")
             self._colormap.autorange_vmin_vmax()
             self.vmin_vmax_is_set = True
+
+            self.original_vmin = self._colormap.vmin # set original vmin/vmax values for visualizer to use -> without this, visualizer uses default vmin/vmax (0,1) to reference for the colormap shifting limits
+            self.original_vmax = self._colormap.vmax
+
             self._refresh_colorbar()
 
         command_encoder = self.device.create_command_encoder()
