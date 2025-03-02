@@ -173,29 +173,31 @@ class VisualizerBase:
         self.vmax = new_vmax
 
         # used for hover timeout (upon timeout, vmin/vmax will reset to original values)
-        self._last_hover_time = time.time()
+        # self._last_hover_time = time.time()
 
         self.invalidate(DrawReason.CHANGE) # mark that the visualizer needs to be updated
         
-        self.canvas.call_later(1.0, self.reset_colormap_hover) # runs reset_colormap function after 1 second
+        # self.canvas.call_later(1.0, self.reset_colormap_hover) # runs reset_colormap function after 1 second
 
     # shifts vmin/vmax based on intensity of pixel under mouse
     def apply_shift(self, intensity):
         if intensity < 10000: # for dark areas
-            new_vmin = max(self._colormap.vmin - 2, 0) # make sure vmin doesn't go below 0
-            new_vmax = self._colormap.vmax
+            ratio = self._colormap.vmax * 0.02 # ratio to shift vmin/vmax by
+            new_vmin = max(self._colormap.vmin - ratio, 0) # make sure vmin doesn't go below 0
+            new_vmax = self._colormap.vmax # make sure vmax doesn't go below 8
         else: # bright areas
-            new_vmax = min(self._colormap.vmax + 2, 12) # make sure vmax doesn't go above 12
+            ratio = self._colormap.vmax * 0.02 # ratio to shift vmin/vmax by
+            new_vmax = min(self._colormap.vmax + ratio, 12) # make sure vmax doesn't go above 12
             new_vmin = self._colormap.vmin
 
         return new_vmin, new_vmax
 
-    def reset_colormap_hover(self):
-        # reset vmin/vmax to original values when mouse hover hasn't triggered for a second
-        if time.time() - self._last_hover_time > 1: # if hover hasn't triggered for a second
-            self.vmin = self.original_vmin # set current vmin/vmax to original values
-            self.vmax = self.original_vmax
-            self.invalidate(DrawReason.CHANGE) # mark that the visualizer needs to be updated
+    # def reset_colormap_hover(self):
+    #     # reset vmin/vmax to original values when mouse hover hasn't triggered for a second
+    #     if time.time() - self._last_hover_time > 1: # if hover hasn't triggered for a second
+    #         self.vmin = self.original_vmin # set current vmin/vmax to original values
+    #         self.vmax = self.original_vmax
+    #         self.invalidate(DrawReason.CHANGE) # mark that the visualizer needs to be updated
 
     @property
     def rotation_matrix(self):

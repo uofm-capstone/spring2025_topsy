@@ -32,8 +32,11 @@ class VisualizerCanvasBase:
                     self.drag(event['x']-self._last_x, event['y']-self._last_y)
                 else:
                     self.shift_drag(event['x']-self._last_x, event['y']-self._last_y)
+            # buttons is left click/right click, hover, no buttons, modifiers are key presses shift/ctrl/alt
             else:
-                self.hover(event['x']-self._last_x, event['y']-self._last_y) # add event for mouse pointer moving (but not clicking/dragging)
+                # print(event['modifiers'])
+                if "Alt" in event['modifiers']: # if user is pressing alt + hovering mouse
+                    self.hover(event['x']-self._last_x, event['y']-self._last_y) # add event for mouse pointer moving (but not clicking/dragging)
             self._last_x = event['x']
             self._last_y = event['y']
         elif event['event_type']=='wheel':
@@ -52,6 +55,7 @@ class VisualizerCanvasBase:
 
     def hover(self, dx, dy): # Defines an event for mouse hovering
         # print(f"Canvas Event: dx={dx}, dy={dy}") # debugging
+        self._visualizer.display_status("dynamic color scaling - on")
         self._visualizer.hover(dx, dy) # calls hover function from visualizer.py
         self._visualizer.invalidate() # updates visualization
 
