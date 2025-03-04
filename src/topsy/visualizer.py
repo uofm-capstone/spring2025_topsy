@@ -525,5 +525,44 @@ class VisualizerBase:
         print("No particle selected.")
         return None
 
+    def get_particle_properties(self, particle_position):
+        """Retrieve and print all available properties of the selected particle dynamically."""
+        import numpy as np
+
+        if not hasattr(self, "data_loader"):
+            print("Error: No data loader found.")
+            return {}
+
+        positions = self.get_particle_positions()
+        if positions.size == 0:
+            print("No particle positions available.")
+            return {}
+
+        # Find the index of the selected particle
+        index = np.where((positions == particle_position).all(axis=1))[0]
+        if index.size == 0:
+            print("Error: Selected particle not found in dataset.")
+            return {}
+
+        index = index[0]  # Get the first match
+
+        # Get all available properties in the dataset
+        available_properties = list(self.data_loader.snapshot.keys())
+        print("\n--- Available Properties in Dataset ---")
+        print(available_properties)
+        print("----------------------------------------")
+
+        # Dynamically retrieve and store properties
+        properties = {}
+        for prop_name in available_properties:
+            try:
+                prop_value = self.data_loader.get_named_quantity(prop_name)[index]
+                properties[prop_name.capitalize()] = prop_value
+            except KeyError:
+                continue  # Skip missing properties
+
+        return properties
+
+
 class Visualizer(view_synchronizer.SynchronizationMixin, VisualizerBase):
     pass

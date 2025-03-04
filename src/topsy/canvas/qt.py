@@ -426,7 +426,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         call_later(delay, fn, *args)
 
     def handle_event(self, event):
-        """Capture mouse clicks and find the nearest particle in 3D space."""
+        """Capture mouse clicks and print the nearest particle's data to the terminal."""
         if isinstance(event, dict):
             event_type = event.get("event_type", None)
 
@@ -434,6 +434,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
                 x, y = event.get("x", 0), event.get("y", 0)
                 screen_width, screen_height = self.size().width(), self.size().height()
 
+                print("\n" + "=" * 50)
                 print(f"Mouse clicked at: ({x}, {y}) - Converting to 3D space...")
 
                 # Convert to world space ray
@@ -447,6 +448,15 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
 
                 if nearest_particle is not None:
                     print(f"Selected Particle at {nearest_particle}")
+
+                    # Fetch properties
+                    properties = self._visualizer.get_particle_properties(nearest_particle)
+
+                    # Print the properties in a clear format
+                    print("\n--- Particle Properties ---")
+                    for key, value in properties.items():
+                        print(f"{key}: {value}")
+                    print("=" * 50)
 
                 return True  # Mark event as handled
 
