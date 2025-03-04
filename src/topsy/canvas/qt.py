@@ -195,6 +195,11 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._all_instances.append(self)
         self.hide()
         
+        self._mouse_down_pos = None  # Store initial mouse click position
+        self._mouse_moved = False  # Track if the mouse moves significantly
+        
+        self.popup = ParticleInfoPopup()  # Create the popup window
+
         self.setMouseTracking(True)
 
         self._toolbar = QtWidgets.QToolBar()
@@ -426,38 +431,66 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         call_later(delay, fn, *args)
 
     def handle_event(self, event):
-        """Capture mouse clicks and print the nearest particle's data to the terminal."""
+        """Handle mouse events: ignore selection if the user is rotating."""
         if isinstance(event, dict):
             event_type = event.get("event_type", None)
 
             if event_type == "pointer_down":
+                self._mouse_down_pos = (event.get("x", 0), event.get("y", 0))
+                self._mouse_moved = False
+
+            elif event_type == "pointer_move" and self._mouse_down_pos:
+                x, y = event.get("x", 0), event.get("y", 0)
+                dx = abs(x - self._mouse_down_pos[0])
+                dy = abs(y - self._mouse_down_pos[1])
+                if dx > 5 or dy > 5:
+                    self._mouse_moved = True
+
+            elif event_type == "pointer_up" and not self._mouse_moved:
                 x, y = event.get("x", 0), event.get("y", 0)
                 screen_width, screen_height = self.size().width(), self.size().height()
 
-                print("\n" + "=" * 50)
                 print(f"Mouse clicked at: ({x}, {y}) - Converting to 3D space...")
 
-                # Convert to world space ray
                 ray_direction = self._visualizer.screen_to_world(x, y, screen_width, screen_height)
-
-                # Assume camera position is at (0,0,0) in world space
                 ray_origin = np.array([0, 0, 0])
-
-                # Find the nearest particle
                 nearest_particle = self._visualizer.find_nearest_particle(ray_origin, ray_direction)
 
                 if nearest_particle is not None:
                     print(f"Selected Particle at {nearest_particle}")
-
-                    # Fetch properties
                     properties = self._visualizer.get_particle_properties(nearest_particle)
 
-                    # Print the properties in a clear format
-                    print("\n--- Particle Properties ---")
-                    for key, value in properties.items():
-                        print(f"{key}: {value}")
-                    print("=" * 50)
+                    # Show particle data in popup window
+                    self.popup.update_info(properties)
 
-                return True  # Mark event as handled
+                return True
 
-        return super().handle_event(event)  # Let other events continue
+        return super().handle_event(event)
+
+
+class ParticleInfoPopup(QtWidgets.QWidget):
+    """Popup window to display selected particle details."""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Particle Information")
+        self.setGeometry(100, 100, 350, 250)  # Set default size
+        self.setWindowFlags(QtCore.Qt.WindowType.Window)  # Make it a standalone window
+
+        # Layout
+        self.layout = QtWidgets.QVBoxLayout()
+        self.label = QtWidgets.QLabel("No particle selected")
+        self.layout.addWidget(self.label)
+
+        # Close button
+        self.close_button = QtWidgets.QPushButton("Close")
+        self.close_button.clicked.connect(self.hide)
+        self.layout.addWidget(self.close_button)
+
+        self.setLayout(self.layout)
+
+    def update_info(self, properties):
+        """Update the popup with selected particle data."""
+        info_text = "\n".join([f"{key}: {value}" for key, value in properties.items()])
+        self.label.setText(info_text)
+        self.show()  # Show the window

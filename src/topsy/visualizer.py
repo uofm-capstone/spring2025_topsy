@@ -548,9 +548,6 @@ class VisualizerBase:
 
         # Get all available properties in the dataset
         available_properties = list(self.data_loader.snapshot.keys())
-        print("\n--- Available Properties in Dataset ---")
-        print(available_properties)
-        print("----------------------------------------")
 
         # Dynamically retrieve and store properties
         properties = {}
