@@ -194,6 +194,12 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._all_instances.append(self)
         self.hide()
 
+        # Add a debounce timer to prevent excessive resizing
+        self._last_width = self.width()  # Store the last known window width
+        self._resize_timer = QtCore.QTimer()
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.timeout.connect(self._apply_resize)
+
         self._toolbar = QtWidgets.QToolBar()
         self._toolbar.setIconSize(QtCore.QSize(16, 16))
 
@@ -222,6 +228,11 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._link_action = QtGui.QAction(self._unlinked_icon, "Link to other windows", self)
         self._link_action.setIconText("Link")
         self._link_action.triggered.connect(self.on_click_link)
+
+        # Splitscreen Button
+        self._splitscreen_action = QtGui.QAction(self._splitscreen_icon, "Splitscreen", self)
+        self._splitscreen_action.setCheckable(True)
+        self._splitscreen_action.triggered.connect(self.on_click_splitscreen)
 
 
         self._colormap_menu = QtWidgets.QComboBox()
@@ -261,6 +272,8 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar.addWidget(self._quantity_menu)
         self._toolbar.addSeparator()
         self._toolbar.addAction(self._link_action)
+        self._toolbar.addSeparator()
+        self._toolbar.addAction(self._splitscreen_action)
         self._recorder = None
 
 
@@ -270,6 +283,10 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         layout.removeWidget(self._subwidget)
 
         our_layout = PySide6.QtWidgets.QVBoxLayout()
+
+        self._subwidget.setMinimumSize(self.width() // 2, self.height())
+        self._subwidget.setMaximumSize(self.width() // 2, self.height())
+
         our_layout.addWidget(self._subwidget)
         our_layout.addWidget(self._toolbar)
         our_layout.setContentsMargins(0, 0, 0, 0)
@@ -282,6 +299,30 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar_update_timer.start(100)
 
         layout.addLayout(our_layout)
+
+        
+
+    def resizeEvent(self, event):
+        """Resize visualization only if the window width has changed significantly."""
+        super().resizeEvent(event)
+
+        # ✅ Ensure this check only runs when `_last_width` is already set
+        if hasattr(self, "_last_width") and abs(self.width() - self._last_width) > 10:
+            self._last_width = self.width()
+            self._resize_timer.start(200)  # Start debounce timer
+
+    def _apply_resize(self):
+        """Resize visualization only when the window width changes."""
+        new_width = max(self.width() // 2, 300)  # Keep a minimum width to avoid collapsing
+        toolbar_height = self._toolbar.sizeHint().height()  # Get toolbar height
+        new_height = max(self.height() - toolbar_height, 300)  # Adjust height
+
+        self._subwidget.setMinimumSize(new_width, new_height)
+        self._subwidget.setMaximumSize(new_width, new_height)
+
+        # ✅ Ensure toolbar stays fully visible
+        self._toolbar.setMinimumSize(self.width(), toolbar_height)
+        self._toolbar.setMaximumSize(self.width(), toolbar_height)
 
     def __del__(self):
         try:
@@ -298,6 +339,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._save_movie_icon = _get_icon("movie.png")
         self._import_icon = _get_icon("load_script.png")
         self._export_icon = _get_icon("save_script.png")
+        self._splitscreen_icon = _get_icon("splitscreen.png")  # Add new icon here
 
     def _colormap_menu_changed_action(self):
         logger.info("Colormap changed to %s", self._colormap_menu.currentText())
@@ -386,6 +428,15 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
             synchronizer = view_synchronizer.ViewSynchronizer()
             for instance in self._all_instances:
                 synchronizer.add_view(instance._visualizer)
+
+    def on_click_splitscreen(self):
+        #Toggle the split-screen mode when the button is clicked
+        if self._splitscreen_action.isChecked():
+            logger.info("Splitscreen mode enabled")
+            self._visualizer.enable_split_view()
+        else:
+            logger.info("Splitscreen mode disabled")
+            self._visualizer.disable_split_view()
 
     def _update_toolbar(self):
         if self._recorder is not None or len(self._all_instances)<2:
