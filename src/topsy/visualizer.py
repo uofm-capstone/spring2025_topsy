@@ -23,6 +23,7 @@ from .drawreason import DrawReason
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
 class VisualizerBase:
     colorbar_aspect_ratio = config.COLORBAR_ASPECT_RATIO
     show_status = True
@@ -245,6 +246,7 @@ class VisualizerBase:
                 ce_label += "_fullres"
 
             command_encoder : wgpu.GPUCommandEncoder = self.device.create_command_encoder(label=ce_label)
+            logger.info("Encoding render pass for SPH rendering") #log before encoding the SPH rendering.
             self._sph.encode_render_pass(command_encoder)
 
             with self._render_timer:
@@ -261,15 +263,20 @@ class VisualizerBase:
         if target_texture_view is None:
             target_texture_view = self.canvas.get_context().get_current_texture().create_view()
 
-
+        # logging before encoding the color map render pass
+        logger.info("Encoding render pass for colormap") 
         self._colormap.encode_render_pass(command_encoder, target_texture_view)
         if self.show_colorbar:
+            logger.info("Encoding render pass for colorbar")
             self._colorbar.encode_render_pass(command_encoder, target_texture_view)
         if self.show_scalebar:
+            logger.info("Encoding render pass for scalebar")
             self._scalebar.encode_render_pass(command_encoder, target_texture_view)
         if self.crosshairs_visible:
+            logger.info("Encoding render pass for crosshairs")
             self._crosshairs.encode_render_pass(command_encoder, target_texture_view)
         if self._periodic_tiling:
+            logger.info("Encoding render pass for periodic tiling (cube)")
             self._cube.encode_render_pass(command_encoder, target_texture_view)
 
         if reason == DrawReason.REFINE:
@@ -279,6 +286,8 @@ class VisualizerBase:
             self._update_and_display_status(command_encoder, target_texture_view)
 
         self.device.queue.submit([command_encoder.finish()])
+        # logging that all render passes have been submitted 
+        logger.info(f"Finished drawing with reason: {reason}") 
 
 
 
