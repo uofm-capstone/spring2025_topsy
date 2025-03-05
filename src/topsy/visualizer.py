@@ -120,7 +120,8 @@ class VisualizerBase:
         )
 
         self.synchronize_with(self)
-        self.synchronize_with(self.comparison_texture)
+        if hasattr(self, "comparison_visualizer") and isinstance(self.comparison_visualizer, Visualizer):
+            self.synchronize_with(self.comparison_visualizer)
 
     def invalidate(self, reason=DrawReason.CHANGE):
         # NB no need to check if we're already pending a draw - wgpu.gui does that for us
@@ -266,7 +267,7 @@ class VisualizerBase:
             
             # 2. Render the second visualization (Comparison Colormap)
             command_encoder = self.device.create_command_encoder(label=f"{ce_label}_comparison")
-            self._sph.encode_render_pass(command_encoder, target_texture_view=self.comparison_texture.create_view())
+            self._sph.encode_render_pass(command_encoder, target_texture=self.comparison_texture.create_view())
             self.device.queue.submit([command_encoder.finish()])
 
         if not self.vmin_vmax_is_set:
@@ -282,19 +283,29 @@ class VisualizerBase:
             main_texture_view = self.canvas.get_context().get_current_texture().create_view()
             comparison_texture_view = self.comparison_texture.create_view()
 
+        render_pass = command_encoder.begin_render_pass(
+            color_attachments=[
+                {
+                    "view": target_texture_view,
+                    "resolve_target": None,
+                    "clear_value": (0.0, 0.0, 0.0, 0.0),
+                    "load_op": wgpu.LoadOp.clear,
+                    "store_op": wgpu.StoreOp.store,
+                }
+            ]
+        )
+
         if self.canvas.split_view:
             width = self.canvas.width_physical
             height = self.canvas.height_physical
 
             # Left half for main visualization
-            self.device.queue.submit([command_encoder.finish()])
-            self.canvas.get_context().set_viewport(0, 0, width // 2, height)
+            command_encoder.set_viewport(0, 0, width // 2, height, 0.0, 1.0)
             self._colormap.encode_render_pass(command_encoder, target_texture_view)
 
             # Right half for comparison visualization
-            self.device.queue.submit([command_encoder.finish()])
-            self.canvas.get_context().set_viewport(width // 2, 0, width // 2, height)
-            self._comparison_colormap.encode_render_pass(command_encoder, comparison_texture_view)
+            command_encoder.set_viewport(width // 2, 0, width // 2, height, 0.0, 1.0)
+            self._comparison_colormap.encode_render_pass(command_encoder, self.comparison_texture.create_view())
         else:
             self._colormap.encode_render_pass(command_encoder, main_texture_view)
 
@@ -312,6 +323,8 @@ class VisualizerBase:
 
         if self.show_status:
             self._update_and_display_status(command_encoder, target_texture_view)
+
+        render_pass.end()
 
         self.device.queue.submit([command_encoder.finish()])
 

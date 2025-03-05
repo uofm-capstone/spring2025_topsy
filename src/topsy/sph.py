@@ -223,8 +223,9 @@ class SPH:
 
         self._device.queue.write_buffer(self._transform_buffer, 0, transform_params)
 
-    def encode_render_pass(self, command_encoder):
+    def encode_render_pass(self, command_encoder, target_texture=None):
         self._update_transform_buffer()
+        render_target = target_texture if target_texture else self._render_texture
         view: wgpu.GPUTextureView = self._render_texture.create_view()
         sph_render_pass = command_encoder.begin_render_pass(
             color_attachments=[
