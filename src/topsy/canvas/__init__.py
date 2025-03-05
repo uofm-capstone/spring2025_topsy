@@ -55,7 +55,7 @@ class VisualizerCanvasBase:
 
     def hover(self, dx, dy): # Defines an event for mouse hovering
         # print(f"Canvas Event: dx={dx}, dy={dy}") # debugging
-        self._visualizer.display_status("dynamic color scaling - on")
+        self._visualizer.display_status("dynamic color scaling - on") # displays message on screen that shows the feature is on
         self._visualizer.hover(dx, dy) # calls hover function from visualizer.py
         self._visualizer.invalidate() # updates visualization
 

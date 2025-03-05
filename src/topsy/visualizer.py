@@ -156,14 +156,6 @@ class VisualizerBase:
 
         # separate vmin/vmax shifting into separate function (currently sets vmin/vmax linearly based on intensity)
         new_vmin, new_vmax = self.apply_shift(intensity) # returns new vmin and vmax
-
-        # setting new vmin/vmax (color scale limits) based on intensity
-        # if intensity < 5000: # keep vmin/vmax the same if pixel is not intense enough (dark areas)
-        #     new_vmin = max(self._colormap.vmin - 0.5, 0) # make sure vmin doesn't go below 0
-        #     new_vmax = self._colormap.vmax
-        # else: # bright areas
-        #     new_vmin = self._colormap.vmin 
-        #     new_vmax = min(self._colormap.vmax + 0.5, 12) # make sure vmax doesn't go above 12
             
         # print colormap change data
         print(f"absolute mouse positions: ({self.abs_x:.2f}, {self.abs_y:.2f}) // pixel coords: ({img_x}, {img_y}) // intensity: {intensity:.3f} // old vmin: {self._colormap.vmin:.3f} // old vmax: {self._colormap.vmax:.3f} // new vmin: {new_vmin:.3f} // new vmax: {new_vmax:.3f}")
