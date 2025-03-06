@@ -194,6 +194,9 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._all_instances.append(self)
         self.hide()
 
+        # Track split-screen state (default = False)
+        self._splitscreen_enabled = False
+
         # Add a debounce timer to prevent excessive resizing
         self._last_width = self.width()  # Store the last known window width
         self._resize_timer = QtCore.QTimer()
@@ -284,9 +287,6 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
 
         our_layout = PySide6.QtWidgets.QVBoxLayout()
 
-        self._subwidget.setMinimumSize(self.width() // 2, self.height())
-        self._subwidget.setMaximumSize(self.width() // 2, self.height())
-
         our_layout.addWidget(self._subwidget)
         our_layout.addWidget(self._toolbar)
         our_layout.setContentsMargins(0, 0, 0, 0)
@@ -313,12 +313,16 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
 
     def _apply_resize(self):
         """Resize visualization only when the window width changes."""
-        new_width = max(self.width() // 2, 300)  # Keep a minimum width to avoid collapsing
+        if self._splitscreen_enabled:
+            new_width = max(self.width() // 2, 300)  # Half the screen width
+        else:
+            new_width = self.width()  # Full-screen width
         toolbar_height = self._toolbar.sizeHint().height()  # Get toolbar height
         new_height = max(self.height() - toolbar_height, 300)  # Adjust height
 
-        self._subwidget.setMinimumSize(new_width, new_height)
-        self._subwidget.setMaximumSize(new_width, new_height)
+        # ✅ Set both min and max size dynamically to allow resizing in both directions
+        self._subwidget.setMinimumSize(300, 300)  # Ensure it never shrinks below 300x300
+        self._subwidget.setMaximumSize(new_width, new_height)  # Allow full shrinking
 
         # ✅ Ensure toolbar stays fully visible
         self._toolbar.setMinimumSize(self.width(), toolbar_height)
@@ -430,13 +434,15 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
                 synchronizer.add_view(instance._visualizer)
 
     def on_click_splitscreen(self):
-        #Toggle the split-screen mode when the button is clicked
-        if self._splitscreen_action.isChecked():
-            logger.info("Splitscreen mode enabled")
-            self._visualizer.enable_split_view()
+        """Toggle split-screen mode when the button is pressed."""
+        self._splitscreen_enabled = self._splitscreen_action.isChecked()
+        
+        if self._splitscreen_enabled:
+            logger.info("✅ Split-screen enabled")
         else:
-            logger.info("Splitscreen mode disabled")
-            self._visualizer.disable_split_view()
+            logger.info("🚫 Split-screen disabled")
+
+        self._apply_resize()  # Apply the new layout
 
     def _update_toolbar(self):
         if self._recorder is not None or len(self._all_instances)<2:
