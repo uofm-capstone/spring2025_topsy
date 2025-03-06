@@ -17,6 +17,9 @@ class VisualizerCanvasBase:
     def __init__(self, *args, **kwargs):
         self._visualizer : Visualizer = kwargs.pop("visualizer")
 
+        self._mouse_down_pos = None  # Store initial click position
+        self._mouse_moved = False  # Track whether the mouse moved
+
         self._last_x = 0
         self._last_y = 0
         # The below are dummy values that will be updated by the initial resize event
@@ -26,26 +29,63 @@ class VisualizerCanvasBase:
         super().__init__(*args, **kwargs)
 
     def handle_event(self, event): # lea
-        if event['event_type']=='pointer_move':
-            if len(event['buttons'])>0:
-                if len(event['modifiers'])==0:
-                    self.drag(event['x']-self._last_x, event['y']-self._last_y)
+        if event['event_type'] == 'pointer_down':
+            # Store initial mouse position and reset movement tracking
+            self._mouse_down_pos = (event['x'], event['y'])
+            self._mouse_moved = False
+
+        elif event['event_type'] == 'pointer_move':
+            if len(event['buttons']) > 0:
+                dx = abs(event['x'] - self._mouse_down_pos[0])
+                dy = abs(event['y'] - self._mouse_down_pos[1])
+
+                if dx > 5 or dy > 5:  # If moved significantly, it's a drag
+                    self._mouse_moved = True
+
+                if len(event['modifiers']) == 0:
+                    self.drag(event['x'] - self._last_x, event['y'] - self._last_y)
                 else:
-                    self.shift_drag(event['x']-self._last_x, event['y']-self._last_y)
+                    self.shift_drag(event['x'] - self._last_x, event['y'] - self._last_y)
             else:
-                self.hover(event['x']-self._last_x, event['y']-self._last_y) # add event for mouse pointer moving (but not clicking/dragging)
+                self.hover(event['x'] - self._last_x, event['y'] - self._last_y)
+
             self._last_x = event['x']
             self._last_y = event['y']
-        elif event['event_type']=='wheel':
+
+        elif event['event_type'] == 'wheel':
             self.mouse_wheel(event['dx'], event['dy'])
-        elif event['event_type']=='key_up':
+
+        elif event['event_type'] == 'key_up':
             self.key_up(event['key'])
-        elif event['event_type']=='resize':
+
+        elif event['event_type'] == 'resize':
             self.resize_complete(event['width'], event['height'], event['pixel_ratio'])
-        elif event['event_type']=='double_click':
+
+        elif event['event_type'] == 'double_click':
             self.double_click(event['x'], event['y'])
-        elif event['event_type']=='pointer_up':
+
+        elif event['event_type'] == 'pointer_up':
             self.release_drag()
+
+            # Only process selection if the mouse was not moved significantly (i.e., a click)
+            if not self._mouse_moved:
+                x, y = event['x'], event['y']
+                screen_width, screen_height = self.width_physical, self.height_physical
+
+                print(f"Mouse clicked at: ({x}, {y}) - Converting to 3D space...")
+
+                ray_direction = self._visualizer.screen_to_world(x, y, screen_width, screen_height)
+                ray_origin = np.array([0, 0, 0])
+                nearest_particle = self._visualizer.find_nearest_particle(ray_origin, ray_direction)
+
+                if nearest_particle is not None:
+                    print(f"Selected Particle at {nearest_particle}")
+                    properties = self._visualizer.get_particle_properties(nearest_particle)
+
+                    # Ensure we call the popup from the correct place
+                    if hasattr(self._visualizer.canvas, "popup"):
+                        self._visualizer.canvas.popup.update_info(properties)
+
         else:
             pass
         super().handle_event(event)

@@ -195,12 +195,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._all_instances.append(self)
         self.hide()
         
-        self._mouse_down_pos = None  # Store initial mouse click position
-        self._mouse_moved = False  # Track if the mouse moves significantly
-        
         self.popup = ParticleInfoPopup()  # Create the popup window
-
-        self.setMouseTracking(True)
 
         self._toolbar = QtWidgets.QToolBar()
         self._toolbar.setIconSize(QtCore.QSize(16, 16))
@@ -429,44 +424,6 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
     @classmethod
     def call_later(cls, delay, fn, *args):
         call_later(delay, fn, *args)
-
-    def handle_event(self, event):
-        """Handle mouse events: ignore selection if the user is rotating."""
-        if isinstance(event, dict):
-            event_type = event.get("event_type", None)
-
-            if event_type == "pointer_down":
-                self._mouse_down_pos = (event.get("x", 0), event.get("y", 0))
-                self._mouse_moved = False
-
-            elif event_type == "pointer_move" and self._mouse_down_pos:
-                x, y = event.get("x", 0), event.get("y", 0)
-                dx = abs(x - self._mouse_down_pos[0])
-                dy = abs(y - self._mouse_down_pos[1])
-                if dx > 5 or dy > 5:
-                    self._mouse_moved = True
-
-            elif event_type == "pointer_up" and not self._mouse_moved:
-                x, y = event.get("x", 0), event.get("y", 0)
-                screen_width, screen_height = self.size().width(), self.size().height()
-
-                print(f"Mouse clicked at: ({x}, {y}) - Converting to 3D space...")
-
-                ray_direction = self._visualizer.screen_to_world(x, y, screen_width, screen_height)
-                ray_origin = np.array([0, 0, 0])
-                nearest_particle = self._visualizer.find_nearest_particle(ray_origin, ray_direction)
-
-                if nearest_particle is not None:
-                    print(f"Selected Particle at {nearest_particle}")
-                    properties = self._visualizer.get_particle_properties(nearest_particle)
-
-                    # Show particle data in popup window
-                    self.popup.update_info(properties)
-
-                return True
-
-        return super().handle_event(event)
-
 
 class ParticleInfoPopup(QtWidgets.QWidget):
     """Popup window to display selected particle details."""
