@@ -195,14 +195,41 @@ class VisualizerBase:
         
     #     return 0.01 * avg_weight
     
-    def set_colormap_exponent(self, exponent):
-        # use exponent to shift vmin/vmax from original values
-        mid = (self.original_vmin + self.original_vmax) / 2 # middle value between original vmin and vmax
-        span = (self.original_vmax - self.original_vmin) / 2 # range between original vmin and vmax
-        new_span = span ** exponent # new range taking into account the exponent calculated from the slider
+    # def set_colormap_exponent(self, exponent):
+    #     # use exponent to shift vmin/vmax from original values
+    #     mid = (self.original_vmin + self.original_vmax) / 2 # middle value between original vmin and vmax
+    #     span = (self.original_vmax - self.original_vmin) / 2 # range between original vmin and vmax
+    #     new_span = span ** exponent # new range taking into account the exponent calculated from the slider
 
-        self.vmin = mid - new_span # update vmin and vmax
-        self.vmax = mid + new_span
+    #     self.vmin = mid - new_span # update vmin and vmax
+    #     self.vmax = mid + new_span
+    
+    def set_colormap_exponent(self, exponent):
+        vmin = self.original_vmin
+        vmax = self.original_vmax
+
+        mid = (vmin + vmax) / 2 # middle value between original vmin and vmax
+        span = vmax - vmin # range between original vmin and vmax
+
+        # boost dark areas (right side of slider)
+        if exponent > 1.0: # use exponent to shift vmin/vmax from original values
+            factor = (exponent - 1.0) * 3 + 1  # scale up softly
+            new_vmin = vmin
+            new_vmax = vmin + (np.sqrt(span) * factor) # sqrt to make the shift more pronounced
+        # boost bright areas (left side of slider)
+        elif exponent < 1.0:
+            factor = (1.0 - exponent) * 3 + 1  # scale up softly
+            new_vmin = vmax - (np.sqrt(span) * factor) # sqrt to make the shift more pronounced
+            new_vmax = vmax
+        # if exponent is 1, maintain original vmin/vmax values
+        else:
+            new_vmin = vmin
+            new_vmax = vmax
+
+        # update vmin and vmax
+        self.vmin = new_vmin
+        self.vmax = new_vmax
+        self.invalidate(DrawReason.CHANGE)
 
     @property
     def rotation_matrix(self):

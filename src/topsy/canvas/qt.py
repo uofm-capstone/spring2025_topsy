@@ -235,11 +235,11 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
 
         # implementing slider for vmin/vmax shifting
         self._contrast_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal) # using pyside slider widget
-        # slider goes from 1 - 300, starts at 150
-        self._contrast_slider.setMinimum(1) 
-        self._contrast_slider.setMaximum(300)  
-        self._contrast_slider.setValue(150)  
-        self._contrast_slider.setFixedWidth(300)
+        # slider goes from min to max, with a default value of 100
+        self._contrast_slider.setMinimum(50) 
+        self._contrast_slider.setMaximum(150)  
+        self._contrast_slider.setValue(100)  
+        self._contrast_slider.setFixedWidth(150)
         # Connect the slider to a function that will shift the colormap
         self._contrast_slider.valueChanged.connect(self.on_contrast_slider_changed)
 
