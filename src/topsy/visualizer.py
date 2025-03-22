@@ -208,18 +208,20 @@ class VisualizerBase:
         vmin = self.original_vmin
         vmax = self.original_vmax
 
-        mid = (vmin + vmax) / 2 # middle value between original vmin and vmax
         span = vmax - vmin # range between original vmin and vmax
 
+        # make sure exponent is within bounds
+        exponent = np.clip(exponent, 0.5, 1.5)
+
         # boost dark areas (right side of slider)
-        if exponent > 1.0: # use exponent to shift vmin/vmax from original values
-            factor = (exponent - 1.0) * 3 + 1  # scale up softly
+        if exponent > 1.0:
+            factor = (exponent - 1.0) * span * 0.8 # when on right side of slider, we are shifting the vmax downwards to boost the dark areas
             new_vmin = vmin
-            new_vmax = vmin + (np.sqrt(span) * factor) # sqrt to make the shift more pronounced
+            new_vmax = vmax - factor
         # boost bright areas (left side of slider)
-        elif exponent < 1.0:
-            factor = (1.0 - exponent) * 3 + 1  # scale up softly
-            new_vmin = vmax - (np.sqrt(span) * factor) # sqrt to make the shift more pronounced
+        elif exponent < 1.0: # use exponent to shift vmin/vmax from original values
+            factor = (1.0 - exponent) * span * 0.8  # when on left side of slider, we are shifting the vmin upwards to boost the bright areas
+            new_vmin = vmin + factor
             new_vmax = vmax
         # if exponent is 1, maintain original vmin/vmax values
         else:
@@ -230,6 +232,7 @@ class VisualizerBase:
         self.vmin = new_vmin
         self.vmax = new_vmax
         self.invalidate(DrawReason.CHANGE)
+
 
     @property
     def rotation_matrix(self):
