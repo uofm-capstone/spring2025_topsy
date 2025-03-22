@@ -61,8 +61,8 @@ class VisualizerBase:
         # maintain original min/max values for color shift to reference (instead of compounding based on updated vmin/vmax)
         self.original_vmin = None # by default, vmin/vmax are set to 0/1 -> set to None initially, wait for autorange_vmin_vmax to set the colormap's original vmin/vmax
         self.original_vmax = None
-        # self.original_vmin = 8 # hardcoded original vmin/vmax values for testing
-        # self.original_vmax = 0.5
+        
+        self._colormap_exponent = 1.0 # exponent to shift vmin/vmax by (1.0 means linear shift)
 
         if periodic_tiling:
             self._sph = periodic_sph.PeriodicSPH(self, self.render_texture)
@@ -131,81 +131,78 @@ class VisualizerBase:
     # 3. make toggleable
     # 4. reduce amount of times hover triggers (and remove print statements)
     # 5. make light area differences more pronounced (dark areas are already decently pronounced)
-    def hover(self, dx, dy):
-        # update mouse position attributes
-        self.abs_x += dx # calculates absolute position by adding change in position to last position (delta x, delta y)
-        self.abs_y += dy
+    # def hover(self, dx, dy):
+    #     # update mouse position attributes
+    #     self.abs_x += dx # calculates absolute position by adding change in position to last position (delta x, delta y)
+    #     self.abs_y += dy
 
-        # get rendered image sample data (using off-screen texture to avoid limitations of get_sph_image - can only get called once per frame)
-        image = self.get_offscreen_image() # returns shape [height, width, 2]
-        img_height = image.shape[0] # assign image height and width
-        img_width = image.shape[1]
-        # convert absolute mouse position to pixel coords in rendered image
-        img_x = int(self.abs_x / self.canvas.width_physical * img_width)
-        img_y = int(self.abs_y / self.canvas.height_physical * img_height)
-        img_x = max(0, min(img_x, img_width - 1)) # make sure width and height within bounds
-        img_y = max(0, min(img_y, img_height - 1))
+    #     # get rendered image sample data (using off-screen texture to avoid limitations of get_sph_image - can only get called once per frame)
+    #     image = self.get_offscreen_image() # returns shape [height, width, 2]
+    #     img_height = image.shape[0] # assign image height and width
+    #     img_width = image.shape[1]
+    #     # convert absolute mouse position to pixel coords in rendered image
+    #     img_x = int(self.abs_x / self.canvas.width_physical * img_width)
+    #     img_y = int(self.abs_y / self.canvas.height_physical * img_height)
+    #     img_x = max(0, min(img_x, img_width - 1)) # make sure width and height within bounds
+    #     img_y = max(0, min(img_y, img_height - 1))
 
-        threshold = self.compute_threshold(image) # compute threshold of pixel weight
+    #     threshold = self.compute_threshold(image) # compute threshold of pixel weight
 
-        # if pixel is not weighted enough, don't trigger colormap shift
-        if image[img_y, img_x, 0] < threshold:
-            return
+    #     # if pixel is not weighted enough, don't trigger colormap shift
+    #     if image[img_y, img_x, 0] < threshold:
+    #         return
         
-        # get pixel data from image using the coords
-        pixel = image[img_y, img_x] # will be used to calculate intensity of the pixel
-        # calculating intensity - how dark or light a pixel is so that the color map adjusts based on intensity
-        intensity = pixel[0]
+    #     # get pixel data from image using the coords
+    #     pixel = image[img_y, img_x] # will be used to calculate intensity of the pixel
+    #     # calculating intensity - how dark or light a pixel is so that the color map adjusts based on intensity
+    #     intensity = pixel[0]
 
-        # separate vmin/vmax shifting into separate function (currently sets vmin/vmax linearly based on intensity)
-        new_vmin, new_vmax = self.apply_shift(intensity) # returns new vmin and vmax
+    #     # separate vmin/vmax shifting into separate function (currently sets vmin/vmax linearly based on intensity)
+    #     new_vmin, new_vmax = self.apply_shift(intensity) # returns new vmin and vmax
             
-        # print colormap change data
-        print(f"absolute mouse positions: ({self.abs_x:.2f}, {self.abs_y:.2f}) // pixel coords: ({img_x}, {img_y}) // intensity: {intensity:.3f} // old vmin: {self._colormap.vmin:.3f} // old vmax: {self._colormap.vmax:.3f} // new vmin: {new_vmin:.3f} // new vmax: {new_vmax:.3f}")
+    #     # print colormap change data
+    #     print(f"absolute mouse positions: ({self.abs_x:.2f}, {self.abs_y:.2f}) // pixel coords: ({img_x}, {img_y}) // intensity: {intensity:.3f} // old vmin: {self._colormap.vmin:.3f} // old vmax: {self._colormap.vmax:.3f} // new vmin: {new_vmin:.3f} // new vmax: {new_vmax:.3f}")
         
-        # update vmin/vmax
-        self.vmin = new_vmin
-        self.vmax = new_vmax
+    #     # update vmin/vmax
+    #     self.vmin = new_vmin
+    #     self.vmax = new_vmax
 
-        # used for hover timeout (upon timeout, vmin/vmax will reset to original values)
-        # self._last_hover_time = time.time()
+    #     self.invalidate(DrawReason.CHANGE) # mark that the visualizer needs to be updated
 
-        self.invalidate(DrawReason.CHANGE) # mark that the visualizer needs to be updated
+    # # shifts vmin/vmax based on intensity of pixel under mouse
+    # def apply_shift(self, intensity):
+    #     if intensity < 10000: # for dark areas
+    #         ratio = self._colormap.vmax * 0.02 # ratio to shift vmin/vmax by
+    #         new_vmin = max(self._colormap.vmin - ratio, 0) # make sure vmin doesn't go below 0
+    #         new_vmax = self._colormap.vmax # make sure vmax doesn't go below 8
+    #     else: # bright areas
+    #         ratio = self._colormap.vmax * 0.02 # ratio to shift vmin/vmax by
+    #         new_vmax = min(self._colormap.vmax + ratio, 12) # make sure vmax doesn't go above 12
+    #         new_vmin = self._colormap.vmin
+
+    #     return new_vmin, new_vmax
+
+    # # computes the threshold of pixel weight by taking fraction of average weight of all pixels
+    # def compute_threshold(self, image, fraction=0.01):
+    #     # get all pixel weights
+    #     all_weights = image[:,:,0]
+    #     # filter out nonempty weights
+    #     all_weights = all_weights[all_weights > 0]
+    #     if all_weights.size == 0:
+    #         return 0
+    #     # calculate average weight of all pixels
+    #     avg_weight = np.mean(all_weights)
         
-        # self.canvas.call_later(1.0, self.reset_colormap_hover) # runs reset_colormap function after 1 second
+    #     return 0.01 * avg_weight
+    
+    def set_colormap_exponent(self, exponent):
+        # use exponent to shift vmin/vmax from original values
+        mid = (self.original_vmin + self.original_vmax) / 2 # middle value between original vmin and vmax
+        span = (self.original_vmax - self.original_vmin) / 2 # range between original vmin and vmax
+        new_span = span ** exponent # new range taking into account the exponent calculated from the slider
 
-    # shifts vmin/vmax based on intensity of pixel under mouse
-    def apply_shift(self, intensity):
-        if intensity < 10000: # for dark areas
-            ratio = self._colormap.vmax * 0.02 # ratio to shift vmin/vmax by
-            new_vmin = max(self._colormap.vmin - ratio, 0) # make sure vmin doesn't go below 0
-            new_vmax = self._colormap.vmax # make sure vmax doesn't go below 8
-        else: # bright areas
-            ratio = self._colormap.vmax * 0.02 # ratio to shift vmin/vmax by
-            new_vmax = min(self._colormap.vmax + ratio, 12) # make sure vmax doesn't go above 12
-            new_vmin = self._colormap.vmin
-
-        return new_vmin, new_vmax
-
-    # computes the threshold of pixel weight by taking fraction of average weight of all pixels
-    def compute_threshold(self, image, fraction=0.01):
-        # get all pixel weights
-        all_weights = image[:,:,0]
-        # filter out nonempty weights
-        all_weights = all_weights[all_weights > 0]
-        if all_weights.size == 0:
-            return 0
-        # calculate average weight of all pixels
-        avg_weight = np.mean(all_weights)
-        
-        return 0.01 * avg_weight
-
-    # def reset_colormap_hover(self):
-    #     # reset vmin/vmax to original values when mouse hover hasn't triggered for a second
-    #     if time.time() - self._last_hover_time > 1: # if hover hasn't triggered for a second
-    #         self.vmin = self.original_vmin # set current vmin/vmax to original values
-    #         self.vmax = self.original_vmax
-    #         self.invalidate(DrawReason.CHANGE) # mark that the visualizer needs to be updated
+        self.vmin = mid - new_span # update vmin and vmax
+        self.vmax = mid + new_span
 
     @property
     def rotation_matrix(self):

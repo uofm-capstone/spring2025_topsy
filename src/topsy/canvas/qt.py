@@ -233,7 +233,15 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._quantity_menu.addItem(self._default_quantity_name)
         self._quantity_menu.setEditable(True)
 
-
+        # implementing slider for vmin/vmax shifting
+        self._contrast_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal) # using pyside slider widget
+        # slider goes from 1 - 300, starts at 150
+        self._contrast_slider.setMinimum(1) 
+        self._contrast_slider.setMaximum(300)  
+        self._contrast_slider.setValue(150)  
+        self._contrast_slider.setFixedWidth(300)
+        # Connect the slider to a function that will shift the colormap
+        self._contrast_slider.valueChanged.connect(self.on_contrast_slider_changed)
 
         self._quantity_menu.setLineEdit(MyLineEdit())
 
@@ -261,13 +269,8 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar.addWidget(self._quantity_menu)
         self._toolbar.addSeparator()
 
-        # implementing slider for vmin/vmax shifting
-        self._contrast_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal) # using pyside slider widget
-        # slider goes from 1 - 300, starts at 150
-        self._contrast_slider.setMinimum(1) 
-        self._contrast_slider.setMaximum(300)  
-        self._contrast_slider.setValue(150)  
-        self._contrast_slider.setFixedWidth(300)
+        # adding contrast slider to toolbar
+        self._toolbar.addWidget(QtWidgets.QLabel("Contrast"))
         self._toolbar.addWidget(self._contrast_slider)
         self._toolbar.addSeparator()
         
@@ -293,6 +296,10 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar_update_timer.start(100)
 
         layout.addLayout(our_layout)
+    
+    # when slider changes -> connect to visualizer.py to shift the colormap exponent
+    def on_contrast_slider_changed(self, value): # value is the value of the slider
+        self._visualizer.set_colormap_exponent(value / 100) # value is between 1 and 300, we want it between 0 and 3 for the exponent
 
     def __del__(self):
         try:
