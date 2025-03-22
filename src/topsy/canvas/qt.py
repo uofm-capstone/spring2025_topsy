@@ -260,6 +260,17 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar.addWidget(self._colormap_menu)
         self._toolbar.addWidget(self._quantity_menu)
         self._toolbar.addSeparator()
+
+        # implementing slider for vmin/vmax shifting
+        self._contrast_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal) # using pyside slider widget
+        # slider goes from 1 - 300, starts at 150
+        self._contrast_slider.setMinimum(1) 
+        self._contrast_slider.setMaximum(300)  
+        self._contrast_slider.setValue(150)  
+        self._contrast_slider.setFixedWidth(300)
+        self._toolbar.addWidget(self._contrast_slider)
+        self._toolbar.addSeparator()
+        
         self._toolbar.addAction(self._link_action)
         self._recorder = None
 
