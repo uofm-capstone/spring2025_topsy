@@ -146,9 +146,12 @@ class VisualizerBase:
         img_x = max(0, min(img_x, img_width - 1)) # make sure width and height within bounds
         img_y = max(0, min(img_y, img_height - 1))
 
-        # maintain original vmin/vmax range
-        # v_range = self.original_vmax - self.original_vmin
+        threshold = self.compute_threshold(image) # compute threshold of pixel weight
 
+        # if pixel is not weighted enough, don't trigger colormap shift
+        if image[img_y, img_x, 0] < threshold:
+            return
+        
         # get pixel data from image using the coords
         pixel = image[img_y, img_x] # will be used to calculate intensity of the pixel
         # calculating intensity - how dark or light a pixel is so that the color map adjusts based on intensity
@@ -183,6 +186,19 @@ class VisualizerBase:
             new_vmin = self._colormap.vmin
 
         return new_vmin, new_vmax
+
+    # computes the threshold of pixel weight by taking fraction of average weight of all pixels
+    def compute_threshold(self, image, fraction=0.01):
+        # get all pixel weights
+        all_weights = image[:,:,0]
+        # filter out nonempty weights
+        all_weights = all_weights[all_weights > 0]
+        if all_weights.size == 0:
+            return 0
+        # calculate average weight of all pixels
+        avg_weight = np.mean(all_weights)
+        
+        return 0.01 * avg_weight
 
     # def reset_colormap_hover(self):
     #     # reset vmin/vmax to original values when mouse hover hasn't triggered for a second
