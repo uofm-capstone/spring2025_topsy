@@ -125,12 +125,6 @@ class VisualizerBase:
         self.rotation_matrix = dx_rotation_matrix @ dy_rotation_matrix @ self.rotation_matrix
 
     # This function, for now, linearly shifts the color map's limits based on intensity of pixel under mouse so that the contrast within darker/lighter areas is enhanced
-    # To do:
-    # 1. tweak colormap shifting (using a better function to enhance contrast of darker/lighter areas, iord and some other color maps don't work)
-    # 2. vmin/vmax capture is inconsistent, have to choose project density quantity a few times to get the correct vmin/vmax values
-    # 3. make toggleable
-    # 4. reduce amount of times hover triggers (and remove print statements)
-    # 5. make light area differences more pronounced (dark areas are already decently pronounced)
     # def hover(self, dx, dy):
     #     # update mouse position attributes
     #     self.abs_x += dx # calculates absolute position by adding change in position to last position (delta x, delta y)
@@ -195,15 +189,7 @@ class VisualizerBase:
         
     #     return 0.01 * avg_weight
     
-    # def set_colormap_exponent(self, exponent):
-    #     # use exponent to shift vmin/vmax from original values
-    #     mid = (self.original_vmin + self.original_vmax) / 2 # middle value between original vmin and vmax
-    #     span = (self.original_vmax - self.original_vmin) / 2 # range between original vmin and vmax
-    #     new_span = span ** exponent # new range taking into account the exponent calculated from the slider
-
-    #     self.vmin = mid - new_span # update vmin and vmax
-    #     self.vmax = mid + new_span
-    
+    # this function is used to shift the vmin/vmax values of the colormap based on the value (exponent) of the UI contrast slider    
     def set_colormap_exponent(self, exponent):
         vmin = self.original_vmin
         vmax = self.original_vmax
@@ -500,43 +486,43 @@ class VisualizerBase:
     # visualizer already has offscreen attribute
     # -> get offscreen texture (for calculating pixel intensity) in rg32float format
     # -> returns numpy array where img data can be extracted from (height, width, pixel coords/values)
-    def get_offscreen_image(self) -> np.ndarray:
-        texture = self.render_texture
-        # because format "rg32float" uses 8 bytes per pixel
-        bytes_per_pixel = 8  
-        # calculate smallest multiple of 256 which can contain one row
-        bytes_per_row = math.ceil(self._render_resolution * bytes_per_pixel / 256) * 256
+    # def get_offscreen_image(self) -> np.ndarray:
+    #     texture = self.render_texture
+    #     # because format "rg32float" uses 8 bytes per pixel
+    #     bytes_per_pixel = 8  
+    #     # calculate smallest multiple of 256 which can contain one row
+    #     bytes_per_row = math.ceil(self._render_resolution * bytes_per_pixel / 256) * 256
 
-        # from get_presentation_image, adapted for rg32float format
-        data = self.device.queue.read_texture(
-            {
-                'texture': texture,
-                'mip_level': 0,
-                'origin': (0, 0, 0)
-            },
-            {
-                'offset': 0,
-                'bytes_per_row': bytes_per_row,
-                'rows_per_image': self._render_resolution,
-            },
-            (self._render_resolution, self._render_resolution, 1)
-        )
+    #     # from get_presentation_image, adapted for rg32float format
+    #     data = self.device.queue.read_texture(
+    #         {
+    #             'texture': texture,
+    #             'mip_level': 0,
+    #             'origin': (0, 0, 0)
+    #         },
+    #         {
+    #             'offset': 0,
+    #             'bytes_per_row': bytes_per_row,
+    #             'rows_per_image': self._render_resolution,
+    #         },
+    #         (self._render_resolution, self._render_resolution, 1)
+    #     )
 
-        # convert raw data to numpy array
-        full_buffer = np.frombuffer(data, dtype=np.float32)
+    #     # convert raw data to numpy array
+    #     full_buffer = np.frombuffer(data, dtype=np.float32)
         
-        # calculate floats each row has
-        floats_per_pixel = 2 # rg32float has 2 floats per pixel
-        floats_per_row_required = self._render_resolution * floats_per_pixel
-        floats_per_row = bytes_per_row // 4  # 4 bytes per float
+    #     # calculate floats each row has
+    #     floats_per_pixel = 2 # rg32float has 2 floats per pixel
+    #     floats_per_row_required = self._render_resolution * floats_per_pixel
+    #     floats_per_row = bytes_per_row // 4  # 4 bytes per float
 
-        # get pixel data from each row
-        image = np.empty((self._render_resolution, self._render_resolution, floats_per_pixel), dtype=np.float32)
-        for i in range(self._render_resolution):
-            start = i * floats_per_row
-            end = start + floats_per_row_required
-            image[i] = full_buffer[start:end].reshape((self._render_resolution, floats_per_pixel))
-        return image
+    #     # get pixel data from each row
+    #     image = np.empty((self._render_resolution, self._render_resolution, floats_per_pixel), dtype=np.float32)
+    #     for i in range(self._render_resolution):
+    #         start = i * floats_per_row
+    #         end = start + floats_per_row_required
+    #         image[i] = full_buffer[start:end].reshape((self._render_resolution, floats_per_pixel))
+    #     return image
 
     def get_presentation_image(self) -> np.ndarray:
         texture = self.context.get_current_texture()

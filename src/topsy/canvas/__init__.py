@@ -33,10 +33,10 @@ class VisualizerCanvasBase:
                 else:
                     self.shift_drag(event['x']-self._last_x, event['y']-self._last_y)
             # buttons is left click/right click, hover, no buttons, modifiers are key presses shift/ctrl/alt
-            else:
-                # print(event['modifiers'])
-                if "Alt" in event['modifiers']: # if user is pressing alt + hovering mouse
-                    self.hover(event['x']-self._last_x, event['y']-self._last_y) # add event for mouse pointer moving (but not clicking/dragging)
+            # else:
+            #     # print(event['modifiers'])
+            #     if "Alt" in event['modifiers']: # if user is pressing alt + hovering mouse
+            #         self.hover(event['x']-self._last_x, event['y']-self._last_y) # add event for mouse pointer moving (but not clicking/dragging)
             self._last_x = event['x']
             self._last_y = event['y']
         elif event['event_type']=='wheel':
@@ -53,11 +53,11 @@ class VisualizerCanvasBase:
             pass
         super().handle_event(event)
 
-    def hover(self, dx, dy): # Defines an event for mouse hovering
-        # print(f"Canvas Event: dx={dx}, dy={dy}") # debugging
-        self._visualizer.display_status("dynamic color scaling - on") # displays message on screen that shows the feature is on
-        self._visualizer.hover(dx, dy) # calls hover function from visualizer.py
-        self._visualizer.invalidate() # updates visualization
+    # def hover(self, dx, dy): # Defines an event for mouse hovering
+    #     # print(f"Canvas Event: dx={dx}, dy={dy}") # debugging
+    #     self._visualizer.display_status("dynamic color scaling - on") # displays message on screen that shows the feature is on
+    #     self._visualizer.hover(dx, dy) # calls hover function from visualizer.py
+    #     self._visualizer.invalidate() # updates visualization
 
     def drag(self, dx, dy):
         self._visualizer.rotate(dx*0.01, dy*0.01)
@@ -78,6 +78,7 @@ class VisualizerCanvasBase:
             self._visualizer.save()
         elif key=='r':
             self._visualizer.vmin_vmax_is_set = False
+            self._contrast_slider.setValue(100) # reset contrast slider to default 100
             self._visualizer.invalidate()
         elif key=='h':
             self._visualizer.reset_view()
