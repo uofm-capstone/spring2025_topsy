@@ -148,9 +148,130 @@ class RecordingSettingsDialog(QtWidgets.QDialog):
 
 
 
+class VminVmaxDialog(QtWidgets.QDialog):
+    def __init__(self, visualizer, *args, parent=None):
+        super().__init__(*args)
+        self._visualizer = visualizer
+        self.setWindowTitle("Set vmin/vmax")
+        self.setFixedSize(325, 150)
 
+        # main layout
+        self._layout = QtWidgets.QVBoxLayout()
+        self.setLayout(self._layout)
 
+        # create layout
+        form_layout = QtWidgets.QFormLayout()
 
+        # vmin input field
+        self._vmin_input = QtWidgets.QLineEdit(self)
+        self._vmin_input.setFixedWidth(150)
+        self._vmin_input.setText(self.format_precision(self._visualizer.vmin))
+        form_layout.addRow("vmin:", self._vmin_input)
+
+        # self._layout.addSpacing(10)
+
+        # vmax input field
+        self._vmax_input = QtWidgets.QLineEdit(self)
+        self._vmax_input.setFixedWidth(150)
+        self._vmax_input.setText(self.format_precision(self._visualizer.vmax))
+        form_layout.addRow("vmax:", self._vmax_input)
+
+        form_layout.setVerticalSpacing(10) # add some vertical spacing between the rows
+
+        # center form layout
+        centered_layout = QtWidgets.QHBoxLayout()
+        centered_layout.addStretch() # add stretch to left
+        centered_layout.addLayout(form_layout)
+        centered_layout.addStretch() # add stretch to right
+
+        self._layout.addLayout(centered_layout)
+
+        # show temporary success/error message in dialog box
+        self.temp_label = QtWidgets.QLabel("") # empty label
+        self.temp_label.setStyleSheet("""
+            color: black;
+            padding: 6px;
+            border-radius: 5px;
+        """)
+        self.temp_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter) # center the label
+        self._layout.addWidget(self.temp_label) # add label to the layout
+        
+        # create button layout
+        button_layout = QtWidgets.QHBoxLayout()
+
+        # apply/reset buttons
+        apply = QtWidgets.QPushButton("Apply")
+        reset = QtWidgets.QPushButton("Reset")
+        # connect the button to a functions that will apply/reset vmin/vmax
+        apply.clicked.connect(self.on_apply_vmin_vmax)
+        reset.clicked.connect(self.on_reset_vmin_vmax)
+
+        # add apply/reset to button layout
+        button_layout.addWidget(apply)
+        button_layout.addWidget(reset)
+
+        # add buttons to main layout
+        self._layout.addLayout(button_layout)
+    
+    # when reset button is clicked -> reset vmin/vmax to default
+    def on_reset_vmin_vmax(self):
+        # self.key_up('r') # simulates 'r' key press
+        self._visualizer.vmin_vmax_is_set = False # reset vmin/vmax to default
+        self._visualizer.invalidate(DrawReason.CHANGE) # redraw the visualizer
+
+        # get original vmin/vmax to sync fields back after reset
+        default_vmin = self._visualizer.original_vmin
+        default_vmax = self._visualizer.original_vmax
+
+        # update vmin/vmax placeholder text
+        self._vmin_input.setText(f"{self.format_precision(default_vmin)}")
+        self._vmax_input.setText(f"{self.format_precision(default_vmax)}")
+        self.temp_message("Reset: vmin/vmax to default", success=True)
+
+    # when apply button is clicked -> set values from vmin/vmax fields to visualizer
+    def on_apply_vmin_vmax(self):
+        try:
+            vmin = float(self._vmin_input.text())
+            vmax = float(self._vmax_input.text())
+            if vmin < vmax:
+                self._visualizer.vmin = vmin
+                self._visualizer.vmax = vmax
+                self._visualizer.invalidate(DrawReason.CHANGE)
+
+                self._vmin_input.setText(self.format_precision(vmin)) # update vmin input field with formatted value
+                self._vmax_input.setText(self.format_precision(vmax)) # update vmax input field with formatted value
+
+                self.temp_message(f"Success: vmin set to {self.format_precision(vmin)} and vmax set to {self.format_precision(vmax)}", success=True)
+                # QtWidgets.QMessageBox.information(self, "Success", f"vmin set to {vmin} and vmax set to {vmax}")
+            else:
+                # QtWidgets.QMessageBox.critical(self, "Invalid Input", "Error: vmin must be less than vmax")
+                self.temp_message("Error: vmin must be less than vmax", success=False)
+        except ValueError:
+            # QtWidgets.QMessageBox.critical(self, "Invalid Input", "Error: vmin and vmax must be numeric values")
+            self.temp_message("Error: vmin and vmax must be numeric values", success=False)
+    
+    # show a temporary message near the vmin/vmax input widgets
+    def temp_message(self, message, success=True, duration=2000):
+        self.temp_label.setText(message) # set the message to the label
+        if success:
+            self.temp_label.setStyleSheet("color: green; padding-top: 5px;")
+        else:
+            self.temp_label.setStyleSheet("color: red; padding-top: 5px;")
+
+        QtCore.QTimer.singleShot(duration, lambda: self.temp_label.clear()) # remove label after duration
+    
+    # format input field precision based on span (ex. iord has very small span)
+    def format_precision(self, value):
+        # adjust precision based on the span of the data
+        span = abs(self._visualizer.original_vmax - self._visualizer.original_vmin)
+        if span < 1e-5:
+            return f"{value:.8e}" # scientific notation for very small spans
+        elif span < 0.001:
+            return f"{value:.6f}"
+        elif span < 0.1:
+            return f"{value:.4f}"
+        else:
+            return f"{value:.2f}"
 
 class VisualizationRecorderWithQtProgressbar(VisualizationRecorder):
 
@@ -244,18 +365,8 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._contrast_slider.valueChanged.connect(self.on_contrast_slider_changed)
 
         # adding vmin/vmax fields to toolbar
-        self._vmin_input = QtWidgets.QLineEdit()
-        self._vmin_input.setFixedWidth(50)
-        # self._vmin_input.setPlaceholderText("1.0")
-        self._vmax_input = QtWidgets.QLineEdit()
-        self._vmax_input.setFixedWidth(50)
-        # self._vmax_input.setPlaceholderText("7.0")
-        # apply button to set vmin/vmax
-        apply = QtWidgets.QPushButton("Apply")
-        # connect the button to a function that will set the vmin/vmax
-        apply.clicked.connect(self.on_apply_vmin_vmax)
-        reset = QtWidgets.QPushButton("Reset")
-        reset.clicked.connect(self.on_reset_vmin_vmax)
+        self._set_vmin_vmax_action = QtGui.QAction(self._minmax_icon, "Set vmin/vmax", self)
+        self._set_vmin_vmax_action.triggered.connect(self.on_click_set_vmin_vmax)
 
         self._quantity_menu.setLineEdit(MyLineEdit())
 
@@ -289,12 +400,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar.addSeparator()
 
         # adding vmin/vmax fields to toolbar
-        self._toolbar.addWidget(QtWidgets.QLabel("vmin"))
-        self._toolbar.addWidget(self._vmin_input)
-        self._toolbar.addWidget(QtWidgets.QLabel("vmax"))
-        self._toolbar.addWidget(self._vmax_input)
-        self._toolbar.addWidget(apply)
-        self._toolbar.addWidget(reset)
+        self._toolbar.addAction(self._set_vmin_vmax_action)
         self._toolbar.addSeparator()
         
         self._toolbar.addAction(self._link_action)
@@ -323,49 +429,6 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
     # when slider changes -> connect to visualizer.py to shift the colormap exponent
     def on_contrast_slider_changed(self, value): # value is the value of the slider
         self._visualizer.set_colormap_exponent(value / 100) # value is between 1 and 300, we want it between 0 and 3 for the exponent
-    
-    # when reset button is clicked -> perform same action as 'r'
-    def on_reset_vmin_vmax(self):
-        self.key_up('r') # simulates 'r' key press
-
-    # when apply button is clicked -> set values from vmin/vmax fields to visualizer
-    def on_apply_vmin_vmax(self):
-        try:
-            vmin = float(self._vmin_input.text())
-            vmax = float(self._vmax_input.text())
-            if vmin < vmax:
-                self._visualizer.vmin = vmin
-                self._visualizer.vmax = vmax
-                self._visualizer.invalidate(DrawReason.CHANGE)
-                self.temp_message("Success: vmin set to {:.2f} and vmax set to {:.2f}".format(vmin, vmax))
-                # QtWidgets.QMessageBox.information(self, "Success", f"vmin set to {vmin} and vmax set to {vmax}")
-            else:
-                # QtWidgets.QMessageBox.critical(self, "Invalid Input", "Error: vmin must be less than vmax")
-                self.temp_message("Error: vmin must be less than vmax")
-        except ValueError:
-            # QtWidgets.QMessageBox.critical(self, "Invalid Input", "Error: vmin and vmax must be numeric values")
-            self.temp_message("Error: vmin and vmax must be numeric values")
-    
-    # show a temporary message near the vmin/vmax input widgets
-    def temp_message(self, message, duration=2000):
-        self.temp_label = QtWidgets.QLabel(message, self) # create a label to show the message
-        self.temp_label.setStyleSheet("""
-            background-color: white;
-            color: black;
-            padding: 6px;
-            border-radius: 5px;
-        """)
-        self.temp_label.setWindowFlags(QtCore.Qt.WindowType.ToolTip) # set tooltip flag to make it disappear after a while
-        self.temp_label.adjustSize()
-
-        # center the label near the vmin/vmax input widgets
-        vmin_pos = self._vmin_input.mapToGlobal(QtCore.QPoint(0, 0))
-        x = vmin_pos.x() + self._vmin_input.width() + 10
-        y = vmin_pos.y() - self.temp_label.height() - 10
-        self.temp_label.move(x, y) # move the label to the calculated position
-        self.temp_label.show() # display label
-
-        QtCore.QTimer.singleShot(duration, self.temp_label.deleteLater) # remove label after duration
 
     def __del__(self):
         try:
@@ -382,6 +445,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._save_movie_icon = _get_icon("movie.png")
         self._import_icon = _get_icon("load_script.png")
         self._export_icon = _get_icon("save_script.png")
+        self._minmax_icon = _get_icon("elevator.png")
 
     def _colormap_menu_changed_action(self):
         logger.info("Colormap changed to %s", self._colormap_menu.currentText())
@@ -403,6 +467,9 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
                 self._quantity_menu.setCurrentText(self._visualizer.quantity_name or self._default_quantity_name)
                 message.exec()
 
+    def on_click_set_vmin_vmax(self):
+        dialog = VminVmaxDialog(self._visualizer, parent=self)
+        dialog.exec()
 
     def on_click_record(self):
 
