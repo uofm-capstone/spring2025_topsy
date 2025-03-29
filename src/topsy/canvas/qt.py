@@ -330,10 +330,11 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
                 self._visualizer.vmin = vmin
                 self._visualizer.vmax = vmax
                 self._visualizer.invalidate(DrawReason.CHANGE)
+                QtWidgets.QMessageBox.information(self, "Success", f"vmin set to {vmin} and vmax set to {vmax}")
             else:
-                print("vmin must be less than vmax")
+                QtWidgets.QMessageBox.critical(self, "Invalid Input", "Error: vmin must be less than vmax")
         except ValueError:
-            print("Invalid vmin/vmax values")
+            QtWidgets.QMessageBox.critical(self, "Invalid Input", "Error: vmin and vmax must be numeric values")
 
     def __del__(self):
         try:
