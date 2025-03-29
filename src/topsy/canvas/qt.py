@@ -254,6 +254,8 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         apply = QtWidgets.QPushButton("Apply")
         # connect the button to a function that will set the vmin/vmax
         apply.clicked.connect(self.on_apply_vmin_vmax)
+        reset = QtWidgets.QPushButton("Reset")
+        reset.clicked.connect(self.on_reset_vmin_vmax)
 
         self._quantity_menu.setLineEdit(MyLineEdit())
 
@@ -292,6 +294,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar.addWidget(QtWidgets.QLabel("vmax"))
         self._toolbar.addWidget(self._vmax_input)
         self._toolbar.addWidget(apply)
+        self._toolbar.addWidget(reset)
         self._toolbar.addSeparator()
         
         self._toolbar.addAction(self._link_action)
@@ -320,6 +323,10 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
     # when slider changes -> connect to visualizer.py to shift the colormap exponent
     def on_contrast_slider_changed(self, value): # value is the value of the slider
         self._visualizer.set_colormap_exponent(value / 100) # value is between 1 and 300, we want it between 0 and 3 for the exponent
+    
+    # when reset button is clicked -> perform same action as 'r'
+    def on_reset_vmin_vmax(self):
+        self.key_up('r') # simulates 'r' key press
 
     # when apply button is clicked -> set values from vmin/vmax fields to visualizer
     def on_apply_vmin_vmax(self):
@@ -330,11 +337,35 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
                 self._visualizer.vmin = vmin
                 self._visualizer.vmax = vmax
                 self._visualizer.invalidate(DrawReason.CHANGE)
-                QtWidgets.QMessageBox.information(self, "Success", f"vmin set to {vmin} and vmax set to {vmax}")
+                self.temp_message("Success: vmin set to {:.2f} and vmax set to {:.2f}".format(vmin, vmax))
+                # QtWidgets.QMessageBox.information(self, "Success", f"vmin set to {vmin} and vmax set to {vmax}")
             else:
-                QtWidgets.QMessageBox.critical(self, "Invalid Input", "Error: vmin must be less than vmax")
+                # QtWidgets.QMessageBox.critical(self, "Invalid Input", "Error: vmin must be less than vmax")
+                self.temp_message("Error: vmin must be less than vmax")
         except ValueError:
-            QtWidgets.QMessageBox.critical(self, "Invalid Input", "Error: vmin and vmax must be numeric values")
+            # QtWidgets.QMessageBox.critical(self, "Invalid Input", "Error: vmin and vmax must be numeric values")
+            self.temp_message("Error: vmin and vmax must be numeric values")
+    
+    # show a temporary message near the vmin/vmax input widgets
+    def temp_message(self, message, duration=2000):
+        self.temp_label = QtWidgets.QLabel(message, self) # create a label to show the message
+        self.temp_label.setStyleSheet("""
+            background-color: white;
+            color: black;
+            padding: 6px;
+            border-radius: 5px;
+        """)
+        self.temp_label.setWindowFlags(QtCore.Qt.WindowType.ToolTip) # set tooltip flag to make it disappear after a while
+        self.temp_label.adjustSize()
+
+        # center the label near the vmin/vmax input widgets
+        vmin_pos = self._vmin_input.mapToGlobal(QtCore.QPoint(0, 0))
+        x = vmin_pos.x() + self._vmin_input.width() + 10
+        y = vmin_pos.y() - self.temp_label.height() - 10
+        self.temp_label.move(x, y) # move the label to the calculated position
+        self.temp_label.show() # display label
+
+        QtCore.QTimer.singleShot(duration, self.temp_label.deleteLater) # remove label after duration
 
     def __del__(self):
         try:
