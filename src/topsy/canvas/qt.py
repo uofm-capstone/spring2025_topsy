@@ -243,6 +243,18 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         # Connect the slider to a function that will shift the colormap
         self._contrast_slider.valueChanged.connect(self.on_contrast_slider_changed)
 
+        # adding vmin/vmax fields to toolbar
+        self._vmin_input = QtWidgets.QLineEdit()
+        self._vmin_input.setFixedWidth(50)
+        # self._vmin_input.setPlaceholderText("1.0")
+        self._vmax_input = QtWidgets.QLineEdit()
+        self._vmax_input.setFixedWidth(50)
+        # self._vmax_input.setPlaceholderText("7.0")
+        # apply button to set vmin/vmax
+        apply = QtWidgets.QPushButton("Apply")
+        # connect the button to a function that will set the vmin/vmax
+        apply.clicked.connect(self.on_apply_vmin_vmax)
+
         self._quantity_menu.setLineEdit(MyLineEdit())
 
         # at this moment, the data loader hasn't been initialized yet, so we can't
@@ -273,6 +285,14 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar.addWidget(QtWidgets.QLabel("Contrast"))
         self._toolbar.addWidget(self._contrast_slider)
         self._toolbar.addSeparator()
+
+        # adding vmin/vmax fields to toolbar
+        self._toolbar.addWidget(QtWidgets.QLabel("vmin"))
+        self._toolbar.addWidget(self._vmin_input)
+        self._toolbar.addWidget(QtWidgets.QLabel("vmax"))
+        self._toolbar.addWidget(self._vmax_input)
+        self._toolbar.addWidget(apply)
+        self._toolbar.addSeparator()
         
         self._toolbar.addAction(self._link_action)
         self._recorder = None
@@ -300,6 +320,20 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
     # when slider changes -> connect to visualizer.py to shift the colormap exponent
     def on_contrast_slider_changed(self, value): # value is the value of the slider
         self._visualizer.set_colormap_exponent(value / 100) # value is between 1 and 300, we want it between 0 and 3 for the exponent
+
+    # when apply button is clicked -> set values from vmin/vmax fields to visualizer
+    def on_apply_vmin_vmax(self):
+        try:
+            vmin = float(self._vmin_input.text())
+            vmax = float(self._vmax_input.text())
+            if vmin < vmax:
+                self._visualizer.vmin = vmin
+                self._visualizer.vmax = vmax
+                self._visualizer.invalidate(DrawReason.CHANGE)
+            else:
+                print("vmin must be less than vmax")
+        except ValueError:
+            print("Invalid vmin/vmax values")
 
     def __del__(self):
         try:

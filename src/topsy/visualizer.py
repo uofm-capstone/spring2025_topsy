@@ -123,71 +123,6 @@ class VisualizerBase:
         dx_rotation_matrix = self._x_rotation_matrix(x_angle)
         dy_rotation_matrix = self._y_rotation_matrix(y_angle)
         self.rotation_matrix = dx_rotation_matrix @ dy_rotation_matrix @ self.rotation_matrix
-
-    # This function, for now, linearly shifts the color map's limits based on intensity of pixel under mouse so that the contrast within darker/lighter areas is enhanced
-    # def hover(self, dx, dy):
-    #     # update mouse position attributes
-    #     self.abs_x += dx # calculates absolute position by adding change in position to last position (delta x, delta y)
-    #     self.abs_y += dy
-
-    #     # get rendered image sample data (using off-screen texture to avoid limitations of get_sph_image - can only get called once per frame)
-    #     image = self.get_offscreen_image() # returns shape [height, width, 2]
-    #     img_height = image.shape[0] # assign image height and width
-    #     img_width = image.shape[1]
-    #     # convert absolute mouse position to pixel coords in rendered image
-    #     img_x = int(self.abs_x / self.canvas.width_physical * img_width)
-    #     img_y = int(self.abs_y / self.canvas.height_physical * img_height)
-    #     img_x = max(0, min(img_x, img_width - 1)) # make sure width and height within bounds
-    #     img_y = max(0, min(img_y, img_height - 1))
-
-    #     threshold = self.compute_threshold(image) # compute threshold of pixel weight
-
-    #     # if pixel is not weighted enough, don't trigger colormap shift
-    #     if image[img_y, img_x, 0] < threshold:
-    #         return
-        
-    #     # get pixel data from image using the coords
-    #     pixel = image[img_y, img_x] # will be used to calculate intensity of the pixel
-    #     # calculating intensity - how dark or light a pixel is so that the color map adjusts based on intensity
-    #     intensity = pixel[0]
-
-    #     # separate vmin/vmax shifting into separate function (currently sets vmin/vmax linearly based on intensity)
-    #     new_vmin, new_vmax = self.apply_shift(intensity) # returns new vmin and vmax
-            
-    #     # print colormap change data
-    #     print(f"absolute mouse positions: ({self.abs_x:.2f}, {self.abs_y:.2f}) // pixel coords: ({img_x}, {img_y}) // intensity: {intensity:.3f} // old vmin: {self._colormap.vmin:.3f} // old vmax: {self._colormap.vmax:.3f} // new vmin: {new_vmin:.3f} // new vmax: {new_vmax:.3f}")
-        
-    #     # update vmin/vmax
-    #     self.vmin = new_vmin
-    #     self.vmax = new_vmax
-
-    #     self.invalidate(DrawReason.CHANGE) # mark that the visualizer needs to be updated
-
-    # # shifts vmin/vmax based on intensity of pixel under mouse
-    # def apply_shift(self, intensity):
-    #     if intensity < 10000: # for dark areas
-    #         ratio = self._colormap.vmax * 0.02 # ratio to shift vmin/vmax by
-    #         new_vmin = max(self._colormap.vmin - ratio, 0) # make sure vmin doesn't go below 0
-    #         new_vmax = self._colormap.vmax # make sure vmax doesn't go below 8
-    #     else: # bright areas
-    #         ratio = self._colormap.vmax * 0.02 # ratio to shift vmin/vmax by
-    #         new_vmax = min(self._colormap.vmax + ratio, 12) # make sure vmax doesn't go above 12
-    #         new_vmin = self._colormap.vmin
-
-    #     return new_vmin, new_vmax
-
-    # # computes the threshold of pixel weight by taking fraction of average weight of all pixels
-    # def compute_threshold(self, image, fraction=0.01):
-    #     # get all pixel weights
-    #     all_weights = image[:,:,0]
-    #     # filter out nonempty weights
-    #     all_weights = all_weights[all_weights > 0]
-    #     if all_weights.size == 0:
-    #         return 0
-    #     # calculate average weight of all pixels
-    #     avg_weight = np.mean(all_weights)
-        
-    #     return 0.01 * avg_weight
     
     # this function is used to shift the vmin/vmax values of the colormap based on the value (exponent) of the UI contrast slider    
     def set_colormap_exponent(self, exponent):
@@ -481,48 +416,6 @@ class VisualizerBase:
         else:
             im = np_im[:,:,0]
         return im
-
-    # Note: ChatGPT and Copilot used for debugging and explanations - tried to use get_sph_image to get color sample but get_sph_image can only be called once per frame
-    # visualizer already has offscreen attribute
-    # -> get offscreen texture (for calculating pixel intensity) in rg32float format
-    # -> returns numpy array where img data can be extracted from (height, width, pixel coords/values)
-    # def get_offscreen_image(self) -> np.ndarray:
-    #     texture = self.render_texture
-    #     # because format "rg32float" uses 8 bytes per pixel
-    #     bytes_per_pixel = 8  
-    #     # calculate smallest multiple of 256 which can contain one row
-    #     bytes_per_row = math.ceil(self._render_resolution * bytes_per_pixel / 256) * 256
-
-    #     # from get_presentation_image, adapted for rg32float format
-    #     data = self.device.queue.read_texture(
-    #         {
-    #             'texture': texture,
-    #             'mip_level': 0,
-    #             'origin': (0, 0, 0)
-    #         },
-    #         {
-    #             'offset': 0,
-    #             'bytes_per_row': bytes_per_row,
-    #             'rows_per_image': self._render_resolution,
-    #         },
-    #         (self._render_resolution, self._render_resolution, 1)
-    #     )
-
-    #     # convert raw data to numpy array
-    #     full_buffer = np.frombuffer(data, dtype=np.float32)
-        
-    #     # calculate floats each row has
-    #     floats_per_pixel = 2 # rg32float has 2 floats per pixel
-    #     floats_per_row_required = self._render_resolution * floats_per_pixel
-    #     floats_per_row = bytes_per_row // 4  # 4 bytes per float
-
-    #     # get pixel data from each row
-    #     image = np.empty((self._render_resolution, self._render_resolution, floats_per_pixel), dtype=np.float32)
-    #     for i in range(self._render_resolution):
-    #         start = i * floats_per_row
-    #         end = start + floats_per_row_required
-    #         image[i] = full_buffer[start:end].reshape((self._render_resolution, floats_per_pixel))
-    #     return image
 
     def get_presentation_image(self) -> np.ndarray:
         texture = self.context.get_current_texture()
