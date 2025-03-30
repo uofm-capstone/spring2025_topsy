@@ -146,7 +146,46 @@ class RecordingSettingsDialog(QtWidgets.QDialog):
     def show_scalebar(self):
         return self._scalebar_checkbox.isChecked()
 
+class CustomColormapDialog(QtWidgets.QDialog):
+    def __init__(self, visualizer, *args, parent=None):
+        super().__init__(*args)
+        self._visualizer = visualizer
+        self.setWindowTitle("Create Custom Colormap")
+        self.setFixedSize(400, 300)
+        
+        # main layout
+        self._layout = QtWidgets.QVBoxLayout()
+        self.setLayout(self._layout)
+        
+        # create layout for getting color input
+        self._color_inputs = [] # list to store color input fields
+        self._colors_layout = QtWidgets.QVBoxLayout()
+        self._layout.addLayout(self._colors_layout)
 
+        # add color input fields
+        self.add_color_input("#000000")
+        self.add_color_input("#FFFFFF")
+
+        # add more color input fields
+        add_color = QtWidgets.QPushButton("Add Color")
+        add_color.clicked.connect(lambda: self.add_color_input("#FFFFFF"))
+        self._layout.addWidget(add_color)
+
+        # button layout for apply/cancel
+        button_layout = QtWidgets.QHBoxLayout()
+        apply = QtWidgets.QPushButton("Apply")
+        cancel = QtWidgets.QPushButton("Cancel")
+        button_layout.addWidget(apply)
+        button_layout.addWidget(cancel)
+        self._layout.addLayout(button_layout)
+
+    # add another color input field
+    def add_color_input(self, color="#FFFFFF"):
+        color_input = QtWidgets.QLineEdit(self)
+        color_input.setText(color)
+        color_input.setFixedWidth(100)
+        self._color_inputs.append(color_input)
+        self._colors_layout.addWidget(color_input)
 
 class VminVmaxDialog(QtWidgets.QDialog):
     def __init__(self, visualizer, *args, parent=None):
@@ -368,6 +407,10 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._set_vmin_vmax_action = QtGui.QAction(self._minmax_icon, "Set vmin/vmax", self)
         self._set_vmin_vmax_action.triggered.connect(self.on_click_set_vmin_vmax)
 
+        # implementing custom colormap editor
+        self._create_colormap_action = QtGui.QAction("Create Custom Colormap", self)
+        self._create_colormap_action.triggered.connect(self.on_click_create_colormap)
+
         self._quantity_menu.setLineEdit(MyLineEdit())
 
         # at this moment, the data loader hasn't been initialized yet, so we can't
@@ -394,6 +437,11 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar.addWidget(self._quantity_menu)
         self._toolbar.addSeparator()
 
+        
+        self._toolbar.addAction(self._link_action)
+        self._recorder = None
+        self._toolbar.addSeparator()
+
         # adding contrast slider to toolbar
         self._toolbar.addWidget(QtWidgets.QLabel("Contrast"))
         self._toolbar.addWidget(self._contrast_slider)
@@ -402,11 +450,10 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         # adding vmin/vmax fields to toolbar
         self._toolbar.addAction(self._set_vmin_vmax_action)
         self._toolbar.addSeparator()
-        
-        self._toolbar.addAction(self._link_action)
-        self._recorder = None
 
-
+        # adding custom colormap editor to toolbar
+        self._toolbar.addAction(self._create_colormap_action)
+        self._toolbar.addSeparator()
 
         # now replace the wgpu layout with our own
         layout = self.layout()
@@ -467,9 +514,15 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
                 self._quantity_menu.setCurrentText(self._visualizer.quantity_name or self._default_quantity_name)
                 message.exec()
 
+    def on_click_create_colormap(self):
+        dialog = CustomColormapDialog(self._visualizer, parent=self)
+        if dialog.exec():
+            logger.info("Custom colormap applied")
+
     def on_click_set_vmin_vmax(self):
         dialog = VminVmaxDialog(self._visualizer, parent=self)
-        dialog.exec()
+        if dialog.exec():
+            logger.info("Vmin/Vmax manually updated")
 
     def on_click_record(self):
 
