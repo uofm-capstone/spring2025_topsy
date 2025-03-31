@@ -1,11 +1,12 @@
 from __future__ import annotations
-
+import time #using time module for logging
 import logging
 import numpy as np
 import time
 import wgpu
 
 from contextlib import contextmanager
+from threading import Timer
 
 from . import config
 from . import canvas
@@ -21,6 +22,8 @@ from . import simcube
 from . import view_synchronizer
 from .drawreason import DrawReason
 
+
+# Logging configuration
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
@@ -29,12 +32,27 @@ class VisualizerBase:
     show_status = True
     device = None # device will be shared across all instances
 
+    LOG_INTERVAL = 120 # time for throttling most logs
+    HOVER_LOG_INTERVAL = 10
+
     def __init__(self, data_loader_class = loader.TestDataLoader, data_loader_args = (),
                  *, render_resolution = config.DEFAULT_RESOLUTION, periodic_tiling = False,
                  colormap_name = config.DEFAULT_COLORMAP, canvas_class = canvas.VisualizerCanvas):
         self._colormap_name = colormap_name
         self._render_resolution = render_resolution
         self.crosshairs_visible = False
+
+        self._DEBUG_MODE = False
+        self._interaction_timer = None
+
+        self._log_timestamps = {
+            "low": 0, "full": 0, "high_res": 0, "colormap": 0, "colorbar": 0, "scalebar": 0,
+            "crosshairs": 0, "periodic-tiling": 0, "rotation": 0, "refine": 0, "initial_update": 0, 
+            "low_resolution_update": 0
+        }
+
+
+        
 
         self._prevent_sph_rendering = False # when True, prevents the sph from rendering, to ensure quick screen updates
         self.vmin_vmax_is_set = False
@@ -82,6 +100,28 @@ class VisualizerBase:
 
         self.invalidate(DrawReason.INITIAL_UPDATE)
 
+
+    def log_visual_outcome(self, message, resolution_type):
+
+        current_time = time.time()
+
+        non_critical_types = {"colorbar", "scalebar", "colorbar", "crosshairs"}
+        if not self._DEBUG_MODE and resolution_type in non_critical_types:
+            return
+
+        if current_time - self._log_timestamps.get(resolution_type, 0) >= self.LOG_INTERVAL:
+            self._log_timestamps[resolution_type] = current_time
+            logger.info(message)
+
+
+ 
+    def _check_whether_inactive(self):
+        print(f"Inactivity check: last_lores_draw_time={self._last_lores_draw_time}")
+        if time.time() - self._last_lores_draw_time > config.FULL_RESOLUTION_RENDER_AFTER * 0.95:
+            self._last_lores_draw_time = float("inf")
+            self.log_visual_outcome("Visualization rendered at high resolution.", "high_res")
+            self.invalidate(reason=DrawReason.REFINE)
+
     def _setup_wgpu(self):
         self.adapter: wgpu.GPUAdapter = wgpu.gpu.request_adapter(power_preference="high-performance")
         if self.device is None:
@@ -108,8 +148,16 @@ class VisualizerBase:
             label="sph_render_texture",
         )
 
-    def invalidate(self, reason=DrawReason.CHANGE):
+    '''def invalidate(self, reason=DrawReason.CHANGE):
         # NB no need to check if we're already pending a draw - wgpu.gui does that for us
+        self.canvas.request_draw(lambda: self.draw(reason))'''
+    
+    def invalidate(self, reason=DrawReason.CHANGE):
+        if reason == DrawReason.REFINE:
+            self.log_visual_outcome("Visualization refined to full resolution.", "refine")
+        elif reason == DrawReason.INITIAL_UPDATE:
+            self.log_visual_outcome("Initial visualization setup is complete.", "initial_update")
+
         self.canvas.request_draw(lambda: self.draw(reason))
 
     def rotate(self, x_angle, y_angle):
@@ -117,19 +165,34 @@ class VisualizerBase:
         dy_rotation_matrix = self._y_rotation_matrix(y_angle)
         self.rotation_matrix = dx_rotation_matrix @ dy_rotation_matrix @ self.rotation_matrix
 
+        # Only log the rotation once every LOG_INTERVAL
+        self.log_visual_outcome("Visualization updated due to rotation.", "rotation")
+
     def hover(self, dx, dy): # defines event for mouse hover
         self.last_mouse_x += dx  # updates mouse position
         self.last_mouse_y += dy
-        # print(f"Mouse position: {self.last_mouse_x}, {self.last_mouse_y}") # debugging
-        self.invalidate(DrawReason.CHANGE) # signals that the visualization needs updating because of this event
+        self.invalidate(DrawReason.CHANGE)
+
+    def encode_render_pass_colormap(self, command_encoder, target_texture_view):
+        self.log_visual_outcome("Encoding render pass for colormap.", "colormap")
+        self._colormap.encode_render_pass(command_encoder, target_texture_view)
+
+
 
     @property
     def rotation_matrix(self):
         return self._sph.rotation_matrix
 
+    '''@rotation_matrix.setter
+    def rotation_matrix(self, value):
+        self._sph.rotation_matrix = value
+        self.invalidate()'''
     @rotation_matrix.setter
     def rotation_matrix(self, value):
         self._sph.rotation_matrix = value
+
+        # Log rotation and request a redraw
+        self.log_visual_outcome("Visualization updated due to rotation.", "rotation")
         self.invalidate()
 
     @property
@@ -218,10 +281,20 @@ class VisualizerBase:
                          [0, 1, 0],
                          [-np.sin(angle), 0, np.cos(angle)]])
 
-    def _check_whether_inactive(self):
+    '''def _check_whether_inactive(self):
         if time.time()-self._last_lores_draw_time>config.FULL_RESOLUTION_RENDER_AFTER*0.95:
             self._last_lores_draw_time = np.inf # prevent this from being called again
+            self.invalidate(reason=DrawReason.REFINE)'''
+    def _check_whether_inactive(self):
+        if time.time() - self._last_lores_draw_time > config.FULL_RESOLUTION_RENDER_AFTER * 0.95:
+            self._last_lores_draw_time = np.inf
+
+            # Improved message for clarity and consistency
+            self.log_visual_outcome(" Rendering visualization at full resolution after low-res period.", "refine")
+
             self.invalidate(reason=DrawReason.REFINE)
+
+
 
     @contextmanager
     def prevent_sph_rendering(self):
@@ -244,9 +317,16 @@ class VisualizerBase:
                 ce_label += f"_ds{self._sph.downsample_factor:d}"
             else:
                 ce_label += "_fullres"
+                
 
             command_encoder : wgpu.GPUCommandEncoder = self.device.create_command_encoder(label=ce_label)
-            logger.info("Encoding render pass for SPH rendering") #log before encoding the SPH rendering.
+
+             # Improved resolution logging: Only log when the state changes
+            if self._sph.downsample_factor > 1:
+                self.log_visual_outcome("Rendering at low resolution.", "low")
+            else:
+                self.log_visual_outcome("Rendering at full resolution.", "full")
+
             self._sph.encode_render_pass(command_encoder)
 
             with self._render_timer:
@@ -263,7 +343,7 @@ class VisualizerBase:
         if target_texture_view is None:
             target_texture_view = self.canvas.get_context().get_current_texture().create_view()
 
-        # logging before encoding the color map render pass
+        '''# logging before encoding the color map render pass
         logger.info("Encoding render pass for colormap") 
         self._colormap.encode_render_pass(command_encoder, target_texture_view)
         if self.show_colorbar:
@@ -287,18 +367,71 @@ class VisualizerBase:
 
         self.device.queue.submit([command_encoder.finish()])
         # logging that all render passes have been submitted 
-        logger.info(f"Finished drawing with reason: {reason}") 
+        log_with_interval("Finished drawing with reason: {reason}") '''
+
+        # reworked to follow the same throttled logging logic 
+        # colormap
+        # Encode render passes with optimized logging
+
+        # Colormap (always rendered)
+        self._log_if_changed("Encoding render pass for colormap.", "colormap")
+        self._colormap.encode_render_pass(command_encoder, target_texture_view)
+
+        # Colorbar (conditionally rendered)
+        if self.show_colorbar:
+            self._log_if_changed("Colorbar is rendered on visualization.", "colorbar")
+            self._colorbar.encode_render_pass(command_encoder, target_texture_view)
+
+        # Scalebar (conditionally rendered)
+        if self.show_scalebar:
+            self._log_if_changed("Scalebar is rendered on visualization.", "scalebar")
+            self._scalebar.encode_render_pass(command_encoder, target_texture_view)
+
+        # Crosshairs (conditionally rendered)
+        if self.crosshairs_visible:
+            self._log_if_changed("Crosshairs are rendered on visualization.", "crosshairs")
+            self._crosshairs.encode_render_pass(command_encoder, target_texture_view)
+
+        # Periodic Tiling (conditionally rendered)
+        if self._periodic_tiling:
+            self._log_if_changed("Periodic tiling (cube) rendered on visualization.", "periodic_tiling")
+            self._cube.encode_render_pass(command_encoder, target_texture_view)
+
+        # Handle refined resolution rendering
+        if reason == DrawReason.REFINE:
+            self.display_status("Full-res render took {:.2f} s".format(self._render_timer.last_duration, timeout=0.1))
+
+        if self.show_status:
+            self._update_and_display_status(command_encoder, target_texture_view)
+
+        self.device.queue.submit([command_encoder.finish()])
+
+        # Handle low-resolution logging if applicable
+        if reason not in {DrawReason.PRESENTATION_CHANGE, DrawReason.EXPORT} and not self._prevent_sph_rendering:
+            if self._sph.downsample_factor > 1:
+                self._log_if_changed(
+                    "Visualization updated with a downsampled resolution due to performance constraints.",
+                    "low_resolution_update"
+                )
 
 
 
-        if reason != DrawReason.PRESENTATION_CHANGE and reason != DrawReason.EXPORT and (not self._prevent_sph_rendering):
-            if self._sph.downsample_factor>1:
                 self._last_lores_draw_time = time.time()
                 self.canvas.call_later(config.FULL_RESOLUTION_RENDER_AFTER, self._check_whether_inactive)
             elif self._render_timer.last_duration>1/config.TARGET_FPS and self._sph.downsample_factor==1:
                 # this will affect the NEXT frame, not this one!
                 self._sph.downsample_factor = int(np.floor(float(config.TARGET_FPS)*self._render_timer.last_duration))
 
+
+
+    def _log_if_changed(self, message, log_type):
+        if not hasattr(self, "_last_log_states"):
+            self._last_log_states = {}
+        if self._last_log_states.get(log_type) != message:
+            self.log_visual_outcome(message, log_type)
+            self._last_log_states[log_type] = message
+
+        
     @property
     def vmin(self):
         return self._colormap.vmin
