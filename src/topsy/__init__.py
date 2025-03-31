@@ -4,9 +4,11 @@ from __future__ import annotations
 
 __version__ = "0.3.6"
 
+import IPython
 import argparse
 import logging
 import sys
+import os
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -14,6 +16,8 @@ if TYPE_CHECKING:
 
 
 from . import config
+
+
 
 
 def parse_args(args=None):
@@ -42,6 +46,8 @@ def parse_args(args=None):
                                                           "particles centre (0.3, 0.4, 0.5), radius 0.2. " 
                                                           "Supported only for swift simulations",
                             default=None, type=float)
+    
+    argparser.add_argument('--repl', action="store_true", help="Launch IPython REPL.")
 
     if args is None:
         args = sys.argv[1:]
@@ -75,32 +81,48 @@ def main():
     from . import visualizer, loader
 
     for args in all_args:
-        if "test://" in args.filename:
-            loader_class = loader.TestDataLoader
+        if args.repl:
+            logging.info("Launching IPython REPL....")
             try:
-                n_part = int(float(args.filename[7:])) # going through float allows scientific notation
-            except ValueError:
-                n_part = config.TEST_DATA_NUM_PARTICLES_DEFAULT
-            logger.info(f"Using test data with {n_part} particles")
-            loader_args = (n_part,)
+                # dynamically determine topsy's root directory.               
+                topsy_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+                if topsy_root not in sys.path:
+                    sys.path.append(topsy_root)
+                # start IPython REPL session. Blocks further code from executing.
+                IPython.embed()
+
+            except Exception as e:
+                logging.error(f"Error launching REPL: {e}")
+                sys.exit(1)
         else:
-            import pynbody
-            loader_class = loader.PynbodyDataLoader
-            if args.load_sphere is not None:
-                loader_args = (args.filename, args.center, args.particle,
-                               pynbody.filt.Sphere(args.load_sphere[0], args.load_sphere[1:]))
+            logging.info(f"Starting Visualization with file: {args.filename}")
+
+            if "test://" in args.filename:
+                loader_class = loader.TestDataLoader
+                try:
+                    n_part = int(float(args.filename[7:])) # going through float allows scientific notation
+                except ValueError:
+                    n_part = config.TEST_DATA_NUM_PARTICLES_DEFAULT
+                logger.info(f"Using test data with {n_part} particles")
+                loader_args = (n_part,)
             else:
-                loader_args = (args.filename, args.center, args.particle)
+                import pynbody
+                loader_class = loader.PynbodyDataLoader
+                if args.load_sphere is not None:
+                    loader_args = (args.filename, args.center, args.particle,
+                               pynbody.filt.Sphere(args.load_sphere[0], args.load_sphere[1:]))
+                else:
+                    loader_args = (args.filename, args.center, args.particle)
 
 
-        vis = visualizer.Visualizer(data_loader_class=loader_class,
+            vis = visualizer.Visualizer(data_loader_class=loader_class,
                                     data_loader_args=loader_args,
                                     colormap_name=args.colormap,
                                     periodic_tiling=args.tile,
                                     render_resolution=args.resolution)
 
-        vis.quantity_name = args.quantity
-        vis.canvas.show()
+            vis.quantity_name = args.quantity
+            vis.canvas.show()
 
     from wgpu.gui import qt
     qt.run()
