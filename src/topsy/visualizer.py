@@ -20,6 +20,8 @@ from . import line
 from . import simcube
 from . import view_synchronizer
 from .drawreason import DrawReason
+from .sphere import SphereOverlay  # assuming you save the SphereOverlay class in sphere.py
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -40,7 +42,7 @@ class VisualizerBase:
 
         self.show_colorbar = True
         self.show_scalebar = True
-
+        
         # initialize mouse position attributes
         self.last_mouse_x = 0
         self.last_mouse_y = 0
@@ -48,6 +50,8 @@ class VisualizerBase:
         self.canvas = canvas_class(visualizer=self, title="topsy")
 
         self._setup_wgpu()
+
+        self._sphere_overlay = SphereOverlay(self, position=(0, 0, 0), radius=0.1)
 
         self.data_loader = data_loader_class(self.device, *data_loader_args)
 
@@ -274,6 +278,9 @@ class VisualizerBase:
             self._crosshairs.encode_render_pass(command_encoder, target_texture_view)
         if self._periodic_tiling:
             self._cube.encode_render_pass(command_encoder, target_texture_view)
+
+        if hasattr(self, "_sphere_overlay") and self._sphere_overlay is not None:
+            self._sphere_overlay.encode_render_pass(command_encoder, target_texture_view)
 
         if reason == DrawReason.REFINE:
             self.display_status("Full-res render took {:.2f} s".format(self._render_timer.last_duration, timeout=0.1))
