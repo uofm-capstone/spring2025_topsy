@@ -247,7 +247,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._quantity_menu.addItem(self._default_quantity_name)
         self._quantity_menu.setEditable(True)
 
-
+    
 
         self._quantity_menu.setLineEdit(MyLineEdit())
 
@@ -279,18 +279,27 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar.addAction(self._splitscreen_action)
         self._recorder = None
 
+        # Create second subwidget and splitter
+        self._second_subwidget = WgpuCanvas(parent=self)
+        self._second_subwidget.hide()
 
+        self._splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        self._splitter.addWidget(self._subwidget)
+        self._splitter.addWidget(self._second_subwidget)
+        self._splitter.setSizes([self.width() // 2, self.width() // 2])
+        self._splitter.setChildrenCollapsible(False)
 
-        # now replace the wgpu layout with our own
+        # Replace layout
         layout = self.layout()
         layout.removeWidget(self._subwidget)
 
-        our_layout = PySide6.QtWidgets.QVBoxLayout()
+        main_layout = QtWidgets.QVBoxLayout()
+        main_layout.addWidget(self._splitter)
+        main_layout.addWidget(self._toolbar)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        our_layout.addWidget(self._subwidget)
-        our_layout.addWidget(self._toolbar)
-        our_layout.setContentsMargins(0, 0, 0, 0)
-        our_layout.setSpacing(0)
+        layout.addLayout(main_layout)
 
         self._toolbar.adjustSize()
 
@@ -298,7 +307,6 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar_update_timer.timeout.connect(self._update_toolbar)
         self._toolbar_update_timer.start(100)
 
-        layout.addLayout(our_layout)
 
         
 
@@ -306,25 +314,24 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         """Resize visualization only if the window width has changed significantly."""
         super().resizeEvent(event)
 
-        # ✅ Ensure this check only runs when `_last_width` is already set
+        # ✅ Ensure this check only runs when _last_width is already set
         if hasattr(self, "_last_width") and abs(self.width() - self._last_width) > 10:
             self._last_width = self.width()
             self._resize_timer.start(200)  # Start debounce timer
 
     def _apply_resize(self):
-        """Resize visualization only when the window width changes."""
+        """Resize visualizations and manage split-screen mode."""
+        toolbar_height = self._toolbar.sizeHint().height()
+        new_height = max(self.height() - toolbar_height, 300)
+
         if self._splitscreen_enabled:
-            new_width = max(self.width() // 2, 300)  # Half the screen width
+            self._splitter.setSizes([self.width() // 2, self.width() // 2])
         else:
-            new_width = self.width()  # Full-screen width
-        toolbar_height = self._toolbar.sizeHint().height()  # Get toolbar height
-        new_height = max(self.height() - toolbar_height, 300)  # Adjust height
+            self._splitter.setSizes([self.width(), 0])  # Collapse right side
 
-        # ✅ Set both min and max size dynamically to allow resizing in both directions
-        self._subwidget.setMinimumSize(300, 300)  # Ensure it never shrinks below 300x300
-        self._subwidget.setMaximumSize(new_width, new_height)  # Allow full shrinking
+        self._subwidget.setMinimumSize(300, 300)
+        self._second_subwidget.setMinimumSize(300, 300)
 
-        # ✅ Ensure toolbar stays fully visible
         self._toolbar.setMinimumSize(self.width(), toolbar_height)
         self._toolbar.setMaximumSize(self.width(), toolbar_height)
 
@@ -439,10 +446,22 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         
         if self._splitscreen_enabled:
             logger.info("✅ Split-screen enabled")
+
+            self._second_subwidget.show()
+
+            # Mirror rendering onto the second canvas
+            def draw_both():
+                logger.info("🔁 Drawing both canvases")
+                self._visualizer.draw(DrawReason.PRESENTATION_CHANGE)
+                self._second_subwidget.request_draw()
+
+            self.request_draw(draw_both)
+
         else:
             logger.info("🚫 Split-screen disabled")
+            self._second_subwidget.hide()
 
-        self._apply_resize()  # Apply the new layout
+        self._apply_resize()
 
     def _update_toolbar(self):
         if self._recorder is not None or len(self._all_instances)<2:
@@ -466,12 +485,11 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
 
 
     def request_draw(self, function=None):
-        # As a side effect, wgpu gui layer stores our function call, to enable it to be
-        # repainted later. But we want to distinguish such repaints and handle them
-        # differently, so we need to replace the function with our own
         def function_wrapper():
-            function()
+            if function:
+                function()
             self._subwidget.draw_frame = lambda: self._visualizer.draw(DrawReason.PRESENTATION_CHANGE)
+            self._second_subwidget.draw_frame = lambda: self._visualizer.draw(DrawReason.PRESENTATION_CHANGE)
 
         super().request_draw(function_wrapper)
 
