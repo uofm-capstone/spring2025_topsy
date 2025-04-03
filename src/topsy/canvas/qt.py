@@ -264,6 +264,18 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar.addWidget(self._quantity_menu)
         self._toolbar.addSeparator()
         self._toolbar.addAction(self._link_action)
+
+        # Add toggle button for showing/hiding the sphere overlay
+        self._sphere_toggle = QtGui.QAction("Sphere", self)
+        self._sphere_toggle.setCheckable(True)
+        self._sphere_toggle.setChecked(self._visualizer.show_sphere)
+
+        def toggle_sphere_visibility(checked):
+            self._visualizer.show_sphere = checked
+            self._visualizer.invalidate()
+        self._sphere_toggle.triggered.connect(lambda checked: self._visualizer.toggle_sphere_visibility(checked))
+        self._toolbar.addAction(self._sphere_toggle)
+
         self._recorder = None
 
 

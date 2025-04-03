@@ -47,6 +47,7 @@ class VisualizerBase:
         self.last_mouse_x = 0
         self.last_mouse_y = 0
 
+        self.show_sphere = True
         self.canvas = canvas_class(visualizer=self, title="topsy")
 
         self._setup_wgpu()
@@ -274,13 +275,12 @@ class VisualizerBase:
             self._colorbar.encode_render_pass(command_encoder, target_texture_view)
         if self.show_scalebar:
             self._scalebar.encode_render_pass(command_encoder, target_texture_view)
+        if self.show_sphere:
+            self._sphere_overlay.encode_render_pass(command_encoder, target_texture_view)
         if self.crosshairs_visible:
             self._crosshairs.encode_render_pass(command_encoder, target_texture_view)
         if self._periodic_tiling:
             self._cube.encode_render_pass(command_encoder, target_texture_view)
-
-        if hasattr(self, "_sphere_overlay") and self._sphere_overlay is not None:
-            self._sphere_overlay.encode_render_pass(command_encoder, target_texture_view)
 
         if reason == DrawReason.REFINE:
             self.display_status("Full-res render took {:.2f} s".format(self._render_timer.last_duration, timeout=0.1))
@@ -566,6 +566,11 @@ class VisualizerBase:
                 continue  # Skip missing properties
 
         return properties
+    
+    def toggle_sphere_visibility(self, show):
+        self.show_sphere = show
+        self.invalidate()
+
 
 
 class Visualizer(view_synchronizer.SynchronizationMixin, VisualizerBase):
