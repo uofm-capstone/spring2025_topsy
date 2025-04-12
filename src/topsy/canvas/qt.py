@@ -14,6 +14,10 @@ import time
 import logging
 import matplotlib as mpl
 
+from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.pyplot as plt
+import numpy as np
+
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -171,13 +175,23 @@ class CustomColormapDialog(QtWidgets.QDialog):
         add_color.clicked.connect(lambda: self.add_color_input("#FFFFFF"))
         self._layout.addWidget(add_color)
 
+        # previews the colors
+        self._preview_bar = QtWidgets.QLabel(self)
+        self._preview_bar.setFixedSize(300, 30)
+        self._layout.addWidget(self._preview_bar)
+
         # button layout for apply/cancel
         button_layout = QtWidgets.QHBoxLayout()
         apply = QtWidgets.QPushButton("Apply")
         cancel = QtWidgets.QPushButton("Cancel")
+        # apply.clicked.connect(self.apply_colormap)
+        cancel.clicked.connect(self.reject)
         button_layout.addWidget(apply)
         button_layout.addWidget(cancel)
         self._layout.addLayout(button_layout)
+
+        # update preview
+        self.update_preview()
 
     # add another color input field
     def add_color_input(self, color="#FFFFFF"):
@@ -186,6 +200,36 @@ class CustomColormapDialog(QtWidgets.QDialog):
         color_input.setFixedWidth(100)
         self._color_inputs.append(color_input)
         self._colors_layout.addWidget(color_input)
+
+        # update preview
+        color_input.textChanged.connect(self.update_preview)
+
+    # updates preview bar
+    def update_preview(self):
+        colors = [color_input.text().strip() for color_input in self._color_inputs] # gets all the colors from the _color_inputs list
+        if len(colors) < 2: # there must be at least 2 colors
+            return
+        try:
+            # create custom colormap
+            cmap = LinearSegmentedColormap.from_list("custom_cmap", colors) # using matplotlib from_list, create a custom colormap using the inputted colors
+
+            # generate colormap preview as an image
+            gradient = np.linspace(0, 1, 256).reshape(1, -1) # use numpy to create horizontal gradient
+            fig, ax = plt.subplots(figsize=(3, 0.3))
+            ax.imshow(gradient, aspect="auto", cmap=cmap) # display gradient bar
+            ax.set_axis_off()
+
+            # create temp image file to preview the generated image
+            preview_path = "/tmp/custom_cmap_preview.png"
+            fig.savefig(preview_path, bbox_inches="tight", pad_inches=0)
+            plt.close(fig)
+
+            # display updated preview bar
+            pixmap = QtGui.QPixmap(preview_path)
+            self._preview_bar.setPixmap(pixmap)
+        except Exception as e:
+            # logger.error(f"Error updating preview: {e}")
+            pass
 
 class VminVmaxDialog(QtWidgets.QDialog):
     def __init__(self, visualizer, *args, parent=None):
@@ -516,13 +560,11 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
 
     def on_click_create_colormap(self):
         dialog = CustomColormapDialog(self._visualizer, parent=self)
-        if dialog.exec():
-            logger.info("Custom colormap applied")
+        dialog.exec()
 
     def on_click_set_vmin_vmax(self):
         dialog = VminVmaxDialog(self._visualizer, parent=self)
-        if dialog.exec():
-            logger.info("Vmin/Vmax manually updated")
+        dialog.exec()
 
     def on_click_record(self):
 
