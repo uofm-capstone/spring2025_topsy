@@ -161,7 +161,21 @@ class VisualizerBase:
         topsy_cmap.set_custom_lut(lut) # set the custom LUT to the topsy colormap
         self._colormap = topsy_cmap
 
-        self.invalidate() # update the colormap
+        # for colorbar - autorange vmin/vmax and store them
+        self._colormap.autorange_vmin_vmax()
+        self.vmin_vmax_is_set = True
+        self.original_vmin = self._colormap.vmin
+        self.original_vmax = self._colormap.vmax
+        # set colorbar
+        self._colorbar = colorbar.ColorbarOverlay(
+        self,
+        self._colormap.vmin,
+        self._colormap.vmax,
+        self._colormap,
+        self._get_colorbar_label()
+    )
+
+        self.invalidate() # update the colormap and colorbar
 
     @property
     def rotation_matrix(self):

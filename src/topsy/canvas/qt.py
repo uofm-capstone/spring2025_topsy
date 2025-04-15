@@ -229,88 +229,57 @@ class CustomColormapDialog(QtWidgets.QDialog):
     def __init__(self, visualizer, *args, parent=None):
         super().__init__(*args)
         self._visualizer = visualizer
-        self.setWindowTitle("Create Custom Colormap")
-        self.setFixedSize(400, 300)
+        self.setWindowTitle("Import Colormap")
+        self.setFixedSize(300, 150)
+        self._pending_colormap = None
         
         # main layout
         self._layout = QtWidgets.QVBoxLayout()
         self.setLayout(self._layout)
-        
-        # create layout for getting color input
-        # self._color_inputs = [] # list to store color input fields
-        # self._colors_layout = QtWidgets.QVBoxLayout()
-        # self._layout.addLayout(self._colors_layout)
-
-        # add color input fields
-        # self.add_color_input("#000000")
-        # self.add_color_input("#FFFFFF")
-
-        # add more color input fields
-        # add_color = QtWidgets.QPushButton("Add Color")
-        # add_color.clicked.connect(lambda: self.add_color_input("#FFFFFF"))
-        # self._layout.addWidget(add_color)
 
         # import a custom colormap file
         import_color = QtWidgets.QPushButton("Import Colormap")
         import_color.clicked.connect(self.import_colormap)
         self._layout.addWidget(import_color)
 
-        # previews the colors
-        # self._preview_bar = QtWidgets.QLabel(self)
-        # self._preview_bar.setFixedSize(300, 30)
-        # self._layout.addWidget(self._preview_bar)
+        # preview bar
+        self._preview_bar = QtWidgets.QLabel(self)
+        default_cmap = mpl.colormaps["gray"] # default colormap for preview bar
+        self.update_preview_colormap(default_cmap)
+
+        # preview bar layout
+        preview_layout = QtWidgets.QHBoxLayout()
+        preview_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+        preview_layout.addWidget(self._preview_bar)
+        self._layout.addLayout(preview_layout)
 
         # button layout for apply/cancel
         button_layout = QtWidgets.QHBoxLayout()
         apply = QtWidgets.QPushButton("Apply")
         cancel = QtWidgets.QPushButton("Cancel")
-        # apply.clicked.connect(self.apply_colormap)
+        apply.clicked.connect(self.apply_colormap)
         cancel.clicked.connect(self.reject)
         button_layout.addWidget(apply)
         button_layout.addWidget(cancel)
         self._layout.addLayout(button_layout)
 
-        # # update preview
-        # self.update_preview()
+    # updates preview bar
+    def update_preview_colormap(self, cmap):
+        gradient = np.linspace(0, 1, 256).reshape(1, -1) # use numpy to create horizontal gradient
+        fig, ax = plt.subplots(figsize=(3, 0.3)) # create a figure and axis
+        ax.imshow(gradient, aspect="auto", cmap=cmap) # display gradient bar
+        ax.set_axis_off() # remove axis
 
-    # # add another color input field
-    # def add_color_input(self, color="#FFFFFF"):
-    #     color_input = QtWidgets.QLineEdit(self)
-    #     color_input.setText(color)
-    #     color_input.setFixedWidth(100)
-    #     self._color_inputs.append(color_input)
-    #     self._colors_layout.addWidget(color_input)
+        # create temp image file to preview the generated image
+        preview_path = "/tmp/custom_cmap_preview.png"
+        fig.savefig(preview_path, bbox_inches="tight", pad_inches=0) # save to temp file
+        plt.close(fig)
 
-    #     # update preview
-    #     color_input.textChanged.connect(self.update_preview)
+        # display updated preview bar
+        pixmap = QtGui.QPixmap(preview_path)
+        self._preview_bar.setPixmap(pixmap)
 
-    # # updates preview bar
-    # def update_preview(self):
-    #     colors = [color_input.text().strip() for color_input in self._color_inputs] # gets all the colors from the _color_inputs list
-    #     if len(colors) < 2: # there must be at least 2 colors
-    #         return
-    #     try:
-    #         # create custom colormap
-    #         cmap = LinearSegmentedColormap.from_list("custom_cmap", colors) # using matplotlib from_list, create a custom colormap using the inputted colors
-
-    #         # generate colormap preview as an image
-    #         gradient = np.linspace(0, 1, 256).reshape(1, -1) # use numpy to create horizontal gradient
-    #         fig, ax = plt.subplots(figsize=(3, 0.3))
-    #         ax.imshow(gradient, aspect="auto", cmap=cmap) # display gradient bar
-    #         ax.set_axis_off()
-
-    #         # create temp image file to preview the generated image
-    #         preview_path = "/tmp/custom_cmap_preview.png"
-    #         fig.savefig(preview_path, bbox_inches="tight", pad_inches=0)
-    #         plt.close(fig)
-
-    #         # display updated preview bar
-    #         pixmap = QtGui.QPixmap(preview_path)
-    #         self._preview_bar.setPixmap(pixmap)
-    #     except Exception as e:
-    #         # logger.error(f"Error updating preview: {e}")
-    #         pass
-
+    # imports the custom colormap file, normalizes the format, and updates the preview bar
     def import_colormap(self):
         # open file dialog to select a colormap file
         file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -322,13 +291,27 @@ class CustomColormapDialog(QtWidgets.QDialog):
         try:
             # external function that handles different colormap formats (csv, npy, txt, hex, rgb, cmyk, etc.)
             colors = load_colormap(file_path)
+
             # create matplotlib colormap
             cmap = ListedColormap(colors[:, :3], name="ImportedColormap")
-            self._visualizer.set_colormap(self.cmap) # set the colormap in the visualizer
-            QtWidgets.QMessageBox.information(self, "Success", "Colormap applied.") # show success message
-            self.accept()
+
+            self._pending_colormap = cmap # store the colormap for later use (only applied when apply button is clicked)
+            self.update_preview_colormap(cmap) # update the preview bar with the new colormap
+
+            # self._visualizer.set_colormap(self.cmap) # set the colormap in the visualizer
+            # QtWidgets.QMessageBox.information(self, "Success", "Colormap applied.") # show success message
+            # self.accept()
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to load colormap:\n{str(e)}")
+    
+    # applies the colormap to visualizer
+    def apply_colormap(self):
+        if self._pending_colormap is not None:
+            self._visualizer.set_colormap(self._pending_colormap) # set the colormap in the visualizer
+            QtWidgets.QMessageBox.information(self, "Success", "Colormap applied.") # show success message
+            self.accept()
+        else:
+            QtWidgets.QMessageBox.warning(self, "No Colormap", "Please import a colormap.")
 
 class VminVmaxDialog(QtWidgets.QDialog):
     def __init__(self, visualizer, *args, parent=None):
@@ -551,7 +534,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._set_vmin_vmax_action.triggered.connect(self.on_click_set_vmin_vmax)
 
         # implementing custom colormap editor
-        self._create_colormap_action = QtGui.QAction("Create Custom Colormap", self)
+        self._create_colormap_action = QtGui.QAction(self._import_cmap_icon, "Import Colormap", self)
         self._create_colormap_action.triggered.connect(self.on_click_create_colormap)
 
         self._quantity_menu.setLineEdit(MyLineEdit())
@@ -594,7 +577,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar.addAction(self._set_vmin_vmax_action)
         self._toolbar.addSeparator()
 
-        # adding custom colormap editor to toolbar
+        # adding import colormap to toolbar
         self._toolbar.addAction(self._create_colormap_action)
         self._toolbar.addSeparator()
 
@@ -636,6 +619,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._import_icon = _get_icon("load_script.png")
         self._export_icon = _get_icon("save_script.png")
         self._minmax_icon = _get_icon("elevator.png")
+        self._import_cmap_icon = _get_icon("pallete.png")
 
     def _colormap_menu_changed_action(self):
         logger.info("Colormap changed to %s", self._colormap_menu.currentText())
