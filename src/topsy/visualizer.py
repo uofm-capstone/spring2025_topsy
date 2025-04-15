@@ -6,6 +6,7 @@ import time
 import wgpu
 import math
 import time
+import matplotlib
 
 from contextlib import contextmanager
 
@@ -154,6 +155,13 @@ class VisualizerBase:
         self.vmax = new_vmax
         self.invalidate(DrawReason.CHANGE)
 
+    def set_colormap(self, cmap: matplotlib.colors.Colormap): # set colormap to a matplotlib colormap
+        lut = cmap(np.linspace(0, 1, 256))[:, :3] # to use in topsy we have to convert the colormap format
+        topsy_cmap = colormap.Colormap(self) # create topsy colormap object
+        topsy_cmap.set_custom_lut(lut) # set the custom LUT to the topsy colormap
+        self._colormap = topsy_cmap
+
+        self.invalidate() # update the colormap
 
     @property
     def rotation_matrix(self):
@@ -223,6 +231,13 @@ class VisualizerBase:
         self.invalidate()
 
     def _reinitialize_colormap_and_bar(self):
+        if self._colormap_name == "__custom__": # handle custom colormap
+            lut = self._colormap.custom_lut
+            self._colormap = colormap.Colormap(self) # create topsy colormap object
+            self._colormap.set_custom_lut(lut)
+            self._colorbar = colorbar.ColorbarOverlay(self, self.vmin, self.vmax, "Custom", self._get_colorbar_label())
+            return
+
         vmin, vmax, log_scale = self.vmin, self.vmax, self.log_scale
         self._colormap = colormap.Colormap(self, weighted_average=self.quantity_name is not None)
         if self.vmin_vmax_is_set:

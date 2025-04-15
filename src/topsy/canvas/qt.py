@@ -14,9 +14,10 @@ import time
 import logging
 import matplotlib as mpl
 
-from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap, to_rgb
 import matplotlib.pyplot as plt
 import numpy as np
+import re
 
 from typing import TYPE_CHECKING, Optional
 
@@ -150,6 +151,80 @@ class RecordingSettingsDialog(QtWidgets.QDialog):
     def show_scalebar(self):
         return self._scalebar_checkbox.isChecked()
 
+# handles loading of colormaps from different common formats
+def load_colormap(path: str) -> np.ndarray: # accepts path as a string, returns numpy array
+    # colormap as a numpy file
+    if path.endswith(".npy"): # already a numpy array, return as is
+        return np.load(path)
+    
+    # colormap as other formats/files
+    with open(path, 'r') as f: # open and read file
+        content = f.read()
+    
+    # normalize the matrix style files like [0.1, 0.2, 0.3, 0.4] and get the lines
+    if "[" in content and "#" in content and "," in content: # for hex matrix style files [#000000, #FFFFFF, #FF0000]
+        content = content.strip("[] \n") # remove all brackets and new lines
+        lines = [l.strip() for l in content.split(",") if l.strip()] # split by comma and remove empty lines
+    elif "[" in content and ";" in content: # for formats like [0.1; 0.2; 0.3; 0.4]
+        content = content.strip("[]")
+        lines = content.split(";") # split by semicolon
+    else:
+        lines = content.splitlines() # split by new line, no brackets
+    
+    rgb_list = [] # list to store the RGB values
+
+    # loop through each line
+    for line in lines:
+        line = line.strip().strip("[],") # remove brackets and commas
+
+        if not line or ("style" in line.lower()) or ("format" in line.lower()): # already formatted
+            continue
+        
+        # regex the hex colors and use matplotlib to convert to rgb
+        if re.match(r"^#([0-9a-fA-F]{6})$", line):
+            rgb = to_rgb(line) # convert hex to rgb
+            rgb_list.append(rgb) # append to rgb list
+            continue
+
+        # split rgb and cmyk values
+        try:
+            parts = re.split(r"[,\s]+", line) # split by comma or whitespace
+            parts = [float(p) for p in parts] # convert to float
+        except ValueError:
+            continue
+
+        # convert cmyk to rgb
+        if len(parts) == 4:
+            c, m, y, k = parts # separate columns (from cmyk formatted file) into cmyk values
+            if any(v > 1.0 for v in (c, m, y, k)):
+                # if any value is greater than 1, assume it's a percentage
+                c, m, y, k = [v / 100.0 for v in (c, m, y, k)]
+            r = (1.0 - c) * (1.0 - k) # calculate cmyk to rgb
+            g = (1.0 - m) * (1.0 - k)
+            b = (1.0 - y) * (1.0 - k)
+            rgb_list.append([r, g, b]) # append to rgb list
+        
+        # handle rgb formatted files
+        elif len(parts) == 3:
+            if any(v > 1.0 for v in parts):
+                # if any value is greater than 1, assume it's a percentage
+                parts = [v / 255.0 for v in parts]
+            rgb_list.append(parts) # append to rgb list
+        else:
+            continue # skip invalid lines
+
+    if not rgb_list: # if no valid rgb values found, raise error
+        raise ValueError("No valid RGB/HEX values found")
+    
+    colors = np.array(rgb_list) # convert to numpy array
+
+    # if rgb (instead of rgba)
+    if colors.shape[1] == 3:
+        alpha = np.ones((colors.shape[0], 1), dtype=colors.dtype) # create alpha channel (matplotlib uses rgba)
+        colors = np.hstack([colors, alpha]) # add alpha channel to colors
+    
+    return colors # return colors as numpy array
+
 class CustomColormapDialog(QtWidgets.QDialog):
     def __init__(self, visualizer, *args, parent=None):
         super().__init__(*args)
@@ -162,23 +237,28 @@ class CustomColormapDialog(QtWidgets.QDialog):
         self.setLayout(self._layout)
         
         # create layout for getting color input
-        self._color_inputs = [] # list to store color input fields
-        self._colors_layout = QtWidgets.QVBoxLayout()
-        self._layout.addLayout(self._colors_layout)
+        # self._color_inputs = [] # list to store color input fields
+        # self._colors_layout = QtWidgets.QVBoxLayout()
+        # self._layout.addLayout(self._colors_layout)
 
         # add color input fields
-        self.add_color_input("#000000")
-        self.add_color_input("#FFFFFF")
+        # self.add_color_input("#000000")
+        # self.add_color_input("#FFFFFF")
 
         # add more color input fields
-        add_color = QtWidgets.QPushButton("Add Color")
-        add_color.clicked.connect(lambda: self.add_color_input("#FFFFFF"))
-        self._layout.addWidget(add_color)
+        # add_color = QtWidgets.QPushButton("Add Color")
+        # add_color.clicked.connect(lambda: self.add_color_input("#FFFFFF"))
+        # self._layout.addWidget(add_color)
+
+        # import a custom colormap file
+        import_color = QtWidgets.QPushButton("Import Colormap")
+        import_color.clicked.connect(self.import_colormap)
+        self._layout.addWidget(import_color)
 
         # previews the colors
-        self._preview_bar = QtWidgets.QLabel(self)
-        self._preview_bar.setFixedSize(300, 30)
-        self._layout.addWidget(self._preview_bar)
+        # self._preview_bar = QtWidgets.QLabel(self)
+        # self._preview_bar.setFixedSize(300, 30)
+        # self._layout.addWidget(self._preview_bar)
 
         # button layout for apply/cancel
         button_layout = QtWidgets.QHBoxLayout()
@@ -190,46 +270,65 @@ class CustomColormapDialog(QtWidgets.QDialog):
         button_layout.addWidget(cancel)
         self._layout.addLayout(button_layout)
 
-        # update preview
-        self.update_preview()
+        # # update preview
+        # self.update_preview()
 
-    # add another color input field
-    def add_color_input(self, color="#FFFFFF"):
-        color_input = QtWidgets.QLineEdit(self)
-        color_input.setText(color)
-        color_input.setFixedWidth(100)
-        self._color_inputs.append(color_input)
-        self._colors_layout.addWidget(color_input)
+    # # add another color input field
+    # def add_color_input(self, color="#FFFFFF"):
+    #     color_input = QtWidgets.QLineEdit(self)
+    #     color_input.setText(color)
+    #     color_input.setFixedWidth(100)
+    #     self._color_inputs.append(color_input)
+    #     self._colors_layout.addWidget(color_input)
 
-        # update preview
-        color_input.textChanged.connect(self.update_preview)
+    #     # update preview
+    #     color_input.textChanged.connect(self.update_preview)
 
-    # updates preview bar
-    def update_preview(self):
-        colors = [color_input.text().strip() for color_input in self._color_inputs] # gets all the colors from the _color_inputs list
-        if len(colors) < 2: # there must be at least 2 colors
+    # # updates preview bar
+    # def update_preview(self):
+    #     colors = [color_input.text().strip() for color_input in self._color_inputs] # gets all the colors from the _color_inputs list
+    #     if len(colors) < 2: # there must be at least 2 colors
+    #         return
+    #     try:
+    #         # create custom colormap
+    #         cmap = LinearSegmentedColormap.from_list("custom_cmap", colors) # using matplotlib from_list, create a custom colormap using the inputted colors
+
+    #         # generate colormap preview as an image
+    #         gradient = np.linspace(0, 1, 256).reshape(1, -1) # use numpy to create horizontal gradient
+    #         fig, ax = plt.subplots(figsize=(3, 0.3))
+    #         ax.imshow(gradient, aspect="auto", cmap=cmap) # display gradient bar
+    #         ax.set_axis_off()
+
+    #         # create temp image file to preview the generated image
+    #         preview_path = "/tmp/custom_cmap_preview.png"
+    #         fig.savefig(preview_path, bbox_inches="tight", pad_inches=0)
+    #         plt.close(fig)
+
+    #         # display updated preview bar
+    #         pixmap = QtGui.QPixmap(preview_path)
+    #         self._preview_bar.setPixmap(pixmap)
+    #     except Exception as e:
+    #         # logger.error(f"Error updating preview: {e}")
+    #         pass
+
+    def import_colormap(self):
+        # open file dialog to select a colormap file
+        file_path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Import Custom Colormap", "", "Colormap Files (*.csv *.npy *.txt)"
+        )
+        if not file_path: # if no file is selected, return
             return
+        
         try:
-            # create custom colormap
-            cmap = LinearSegmentedColormap.from_list("custom_cmap", colors) # using matplotlib from_list, create a custom colormap using the inputted colors
-
-            # generate colormap preview as an image
-            gradient = np.linspace(0, 1, 256).reshape(1, -1) # use numpy to create horizontal gradient
-            fig, ax = plt.subplots(figsize=(3, 0.3))
-            ax.imshow(gradient, aspect="auto", cmap=cmap) # display gradient bar
-            ax.set_axis_off()
-
-            # create temp image file to preview the generated image
-            preview_path = "/tmp/custom_cmap_preview.png"
-            fig.savefig(preview_path, bbox_inches="tight", pad_inches=0)
-            plt.close(fig)
-
-            # display updated preview bar
-            pixmap = QtGui.QPixmap(preview_path)
-            self._preview_bar.setPixmap(pixmap)
+            # external function that handles different colormap formats (csv, npy, txt, hex, rgb, cmyk, etc.)
+            colors = load_colormap(file_path)
+            # create matplotlib colormap
+            cmap = ListedColormap(colors[:, :3], name="ImportedColormap")
+            self._visualizer.set_colormap(self.cmap) # set the colormap in the visualizer
+            QtWidgets.QMessageBox.information(self, "Success", "Colormap applied.") # show success message
+            self.accept()
         except Exception as e:
-            # logger.error(f"Error updating preview: {e}")
-            pass
+            QtWidgets.QMessageBox.critical(self, "Error", f"Failed to load colormap:\n{str(e)}")
 
 class VminVmaxDialog(QtWidgets.QDialog):
     def __init__(self, visualizer, *args, parent=None):
