@@ -63,11 +63,31 @@ class Colormap:
 
         self._shader = self._device.create_shader_module(code=shader_code, label="colormap")
 
+    def set_custom_lut(self, lut: np.ndarray):
+        assert lut.shape == (256, 3) # lut must be 256x3
+        self.custom_lut = lut.astype(np.float32)
+        self.use_custom_lut = True # flag to indicate that we are using a custom LUT
+        self.invalidate_texture() # force a recompile of the shader
 
+    # helper to update colorbar (which uses a different class than the colormap)
+    def to_matplotlib(self):
+        if hasattr(self, "custom_lut") and getattr(self, "use_custom_lut", False): # if its a custom lut and flag is not set
+            return matplotlib.colors.ListedColormap(self.custom_lut, name="Custom") # return as a custom matplotlib colormap obj
+        return matplotlib.colormaps[self._colormap_name] # return one of the matplotlib default colormaps
 
     def _setup_texture(self, num_points=config.COLORMAP_NUM_SAMPLES):
-        cmap = matplotlib.colormaps[self._colormap_name]
-        rgba = cmap(np.linspace(0.001, 0.999, num_points)).astype(np.float32)
+        if hasattr(self, "custom_lut") and getattr(self, "use_custom_lut", False): # if its a custom lut and flag is not set
+            # create a texture from the custom LUT
+            rgba = np.zeros((num_points, 4), dtype=np.float32)
+            rgba[:, :3] = self.custom_lut
+            rgba[:, 3] = 1.0
+        else: # use the default colormap
+            try:
+                cmap = matplotlib.colormaps[self._colormap_name] # one of the matplotlib default colormaps
+            except KeyError: # if the colormap is not found, fall back to viridis
+                logger.warning(f"Colormap name '{self._colormap_name}' not found. Falling back to 'viridis'.")
+                cmap = matplotlib.colormaps["viridis"]
+            rgba = cmap(np.linspace(0.001, 0.999, num_points)).astype(np.float32) # create a texture from the colormap
 
         self._texture = self._device.create_texture(
             label="colormap_texture",
@@ -91,6 +111,63 @@ class Colormap:
                 "offset": 0,
             },
             (num_points, 1, 1)
+        )
+    
+    # updates the gpu texture to use the custom colormap (if it exists)
+    def invalidate_texture(self):
+        # check if custom lut exists
+        if not hasattr(self, "custom_lut") or not self.use_custom_lut:
+            logger.warning("No custom LUT set. Skipping texture invalidation.")
+            return
+        
+        # create rgba array from custom lut
+        rgba = np.zeros((256, 4), dtype=np.float32)
+        rgba[:, :3] = self.custom_lut  # use rgb from custom lut
+        rgba[:, 3] = 1.0               # set alpha to 1
+
+        # get size (256)
+        num_points = rgba.shape[0]
+
+        # create a texture from the custom lut
+        self._texture = self._device.create_texture(
+            label="custom_colormap_texture",
+            size=(num_points, 1, 1),
+            dimension=wgpu.TextureDimension.d1, # 1d texture
+            format=wgpu.TextureFormat.rgba32float, # rgba32float format
+            mip_level_count=1,
+            sample_count=1,
+            usage=wgpu.TextureUsage.COPY_DST | wgpu.TextureUsage.TEXTURE_BINDING
+        )
+
+        # write the texture to the GPU (transfers lut from cpu (numpy) to gpu (webgpu))
+        self._device.queue.write_texture(
+            {
+                "texture": self._texture,
+                "mip_level": 0,
+                "origin": [0, 0, 0],
+            },
+            rgba.tobytes(), # converts numpy array to bytes
+            {
+                "bytes_per_row": 4 * 4 * num_points,
+                "offset": 0,
+            },
+            (num_points, 1, 1)
+        )
+
+        # create a new bind group with the new texture because gpu bind groups are immutable
+        # and we need to rebind the new texture to the bind group
+        self._bind_group = self._device.create_bind_group(
+            label="colormap_bind_group_custom",
+            layout=self._bind_group_layout,
+            entries=[
+                {"binding": 0, "resource": self._input_texture.create_view()},
+                {"binding": 1, "resource": self._input_interpolation},
+                {"binding": 2, "resource": self._texture.create_view()},
+                {"binding": 3, "resource": self._input_interpolation},
+                {"binding": 4, "resource": {"buffer": self._parameter_buffer,
+                                            "offset": 0,
+                                            "size": self._parameter_buffer.size}}
+            ]
         )
 
     def _setup_render_pipeline(self):
