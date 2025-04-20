@@ -52,7 +52,7 @@ class VisualizerBase:
 
         self._setup_wgpu()
 
-        self._sphere_overlay = SphereOverlay(self, position=(0, 0, 0), radius=0.1)
+        self._sphere_overlay = SphereOverlay(self, position=(0, 0, 0), radius=2000) # previous radius was too tiny, probably need to set default radius proportional to the simulation size
 
         self.data_loader = data_loader_class(self.device, *data_loader_args)
 

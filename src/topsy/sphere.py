@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import numpy as np
+import wgpu
 from .line import Line
 
 class SphereOverlay(Line):
@@ -58,8 +61,19 @@ class SphereOverlay(Line):
     def set_position_and_radius(self, position, radius):
         self._position = np.array(position, dtype=np.float32)
         self._radius = radius
-        self.path = self._generate_wireframe_sphere()  # triggers buffer rebuild
+        self.path = self._generate_wireframe_sphere()  # triggers buffer rebuild    
 
     @property
     def position(self):
         return self._position
+    
+    # function taken from existing simcube.py to render the sphere in the correct position and as a 3d object
+    def encode_render_pass(self, command_encoder: wgpu.GPUCommandEncoder,
+                                target_texture_view: wgpu.GPUTextureView):
+        self._params["transform"] = (
+            self._visualizer._sph.last_transform_params["transform"]
+            @ self._visualizer.sph_clipspace_to_screen_clipspace_matrix()
+        )
+        super().encode_render_pass(command_encoder, target_texture_view)
+
+
