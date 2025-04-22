@@ -446,19 +446,44 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         
         if self._splitscreen_enabled:
             logger.info("✅ Split-screen enabled")
+            # Show the second subwidget
+            main_context = self._subwidget.get_context()
+
+            # Check if the main context is properly configured
+            if not hasattr(main_context, "_device") or main_context._device is None:
+                logger.error("Main Canvas is not properly configured.")
+                main_context.configure(device=self.device, format="bgra8unorm")
+
+
+            # Configure the second subwidget
+            if not hasattr(self, "_second_subwidget_initialized"):
+                    device = main_context._device
+                    format = "bgra8unorm"
+
+
+                    self._second_subwidget.get_context().configure(device=device, format=format) # configure the second subwidget
+                    self._second_subwidget_initialized = True
 
             self._second_subwidget.show()
+
+            self._visualizer.enable_split_view(self._second_subwidget) # Enable split view in the visualizer
 
             # Mirror rendering onto the second canvas
             def draw_both():
                 logger.info("🔁 Drawing both canvases")
-                self._visualizer.draw(DrawReason.PRESENTATION_CHANGE)
-                self._second_subwidget.request_draw()
+                # Check if the second subwidget is properly configured
+                main_texture_view = self._subwidget.get_context().get_current_texture().create_view()
+                second_texture_view = self._second_subwidget.get_context().get_current_texture().create_view()
 
-            self.request_draw(draw_both)
+                self._visualizer.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=main_texture_view)
+                self._visualizer.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=second_texture_view)
+
+            self.request_draw(draw_both) 
 
         else:
             logger.info("🚫 Split-screen disabled")
+            # Hide the second subwidget
+            self._visualizer.disable_split_view()
             self._second_subwidget.hide()
 
         self._apply_resize()
@@ -488,10 +513,22 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         def function_wrapper():
             if function:
                 function()
-            self._subwidget.draw_frame = lambda: self._visualizer.draw(DrawReason.PRESENTATION_CHANGE)
-            self._second_subwidget.draw_frame = lambda: self._visualizer.draw(DrawReason.PRESENTATION_CHANGE)
 
-        super().request_draw(function_wrapper)
+            # Check if the second subwidget is properly configured
+            if not hasattr(self._second_subwidget, "_device") or self._second_subwidget.get_context()._device is None:
+                logger.debug("Second Canvas is not properly configured. Skipping draw.")
+                return
+            
+            main_texture_view = self._subwidget.get_context().get_current_texture().create_view() # get the texture view of the main canvas
+            second_texture_view = self._second_subwidget.get_context().get_current_texture().create_view() # get the texture view of the second canvas
+            
+            '''self._subwidget.draw_frame = lambda: self._visualizer.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=main_texture_view)
+            self._second_subwidget.draw_frame = lambda: self._visualizer.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=second_texture_view)'''
+
+            self._visualizer.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=main_texture_view) # draw the main canvas
+            self._visualizer.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=second_texture_view) # draw the second canvas
+
+        super().request_draw(function_wrapper) 
 
     @classmethod
     def call_later(cls, delay, fn, *args):

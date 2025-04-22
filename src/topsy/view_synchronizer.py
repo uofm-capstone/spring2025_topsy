@@ -60,8 +60,8 @@ class ViewSynchronizer:
 
 class SynchronizationMixin:
     """Mixin class for Visualizer to allow it to synchronize with other views"""
-    def draw(self, reason, render_texture_view=None):
-        super().draw(reason, render_texture_view)
+    def draw(self, reason, target_texture_view=None):
+        super().draw(reason, target_texture_view=target_texture_view)
         if hasattr(self, "_view_synchronizer") and reason != DrawReason.REFINE:
             self._view_synchronizer.perpetuate_update(self)
 
