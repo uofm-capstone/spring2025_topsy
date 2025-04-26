@@ -244,7 +244,7 @@ class CustomColormapDialog(QtWidgets.QDialog):
 
         # preview bar
         self._preview_bar = QtWidgets.QLabel(self)
-        default_cmap = mpl.colormaps["gray"] # default colormap for preview bar
+        default_cmap = mpl.colormaps[self._visualizer.colormap_name] # default colormap for preview bar
         self.update_preview_colormap(default_cmap)
 
         # preview bar layout
@@ -257,10 +257,13 @@ class CustomColormapDialog(QtWidgets.QDialog):
         button_layout = QtWidgets.QHBoxLayout()
         apply = QtWidgets.QPushButton("Apply")
         cancel = QtWidgets.QPushButton("Cancel")
+        reset = QtWidgets.QPushButton("Reset")
         apply.clicked.connect(self.apply_colormap)
         cancel.clicked.connect(self.reject)
+        reset.clicked.connect(self.reset_colormap)
         button_layout.addWidget(apply)
         button_layout.addWidget(cancel)
+        button_layout.addWidget(reset)
         self._layout.addLayout(button_layout)
 
     # updates preview bar
@@ -298,9 +301,6 @@ class CustomColormapDialog(QtWidgets.QDialog):
             self._pending_colormap = cmap # store the colormap for later use (only applied when apply button is clicked)
             self.update_preview_colormap(cmap) # update the preview bar with the new colormap
 
-            # self._visualizer.set_colormap(self.cmap) # set the colormap in the visualizer
-            # QtWidgets.QMessageBox.information(self, "Success", "Colormap applied.") # show success message
-            # self.accept()
         except Exception as e:
             QtWidgets.QMessageBox.critical(self, "Error", f"Failed to load colormap:\n{str(e)}")
     
@@ -308,10 +308,18 @@ class CustomColormapDialog(QtWidgets.QDialog):
     def apply_colormap(self):
         if self._pending_colormap is not None:
             self._visualizer.set_colormap(self._pending_colormap) # set the colormap in the visualizer
+            self._visualizer._colormap.autorange_vmin_vmax() # reset vmin/vmax to default
+            self._visualizer.invalidate() # redraw the visualizer
             QtWidgets.QMessageBox.information(self, "Success", "Colormap applied.") # show success message
-            self.accept()
         else:
             QtWidgets.QMessageBox.warning(self, "No Colormap", "Please import a colormap.")
+
+    # resets the colormap to one of the matplotlib defaults
+    def reset_colormap(self):
+        self._visualizer.colormap_name = self._visualizer.colormap_name # reset to default colormap (the one currently chosen in the dropdown)
+        default_cmap = mpl.colormaps[self._visualizer.colormap_name] # set the default colormap to the visualization
+        self.update_preview_colormap(default_cmap) # update the preview bar
+        QtWidgets.QMessageBox.information(self, "Reset", "Reset to selected default colormap.") # show success message
 
 class VminVmaxDialog(QtWidgets.QDialog):
     def __init__(self, visualizer, *args, parent=None):
