@@ -61,6 +61,13 @@ class VisualizerCanvasBase:
 
         self._visualizer.crosshairs_visible = True
 
+    # when custom colormap is set, set "Custom" as the current cmap in the dropdown colormap menu
+    def on_colormap_set_custom(self):
+        index = self._colormap_menu.findText("Custom")
+        if index == -1: # if "Custom" is not in the menu, add it
+            self._colormap_menu.addItem("Custom")
+            index = self._colormap_menu.findtext("Custom")
+        self._colormap_menu.setCurrentIndex(index)
 
     def key_up(self, key):
         if key=='s':

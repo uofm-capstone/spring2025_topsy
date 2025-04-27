@@ -308,6 +308,11 @@ class CustomColormapDialog(QtWidgets.QDialog):
     def apply_colormap(self):
         if self._pending_colormap is not None:
             self._visualizer.set_colormap(self._pending_colormap) # set the colormap in the visualizer
+            self._visualizer._colormap_name = "__custom__" # set the colormap name to custom so it acts as a flag for custom handling
+
+            if hasattr(self.parent(), "on_colormap_set_custom"): # check if parent has the method
+                self.parent().on_colormap_set_custom() # method to add "Custom" to the colormap dropdown menu
+
             self._visualizer._colormap.autorange_vmin_vmax() # reset vmin/vmax to default
             self._visualizer.invalidate() # redraw the visualizer
             QtWidgets.QMessageBox.information(self, "Success", "Colormap applied.\n\nNote:\nYou might need to adjust the vmin/vmax manually for best visibility.\nUse 'Set vmin/vmax' in the toolbar.") # show success message
@@ -636,6 +641,8 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
 
     def _quantity_menu_changed_action(self):
         logger.info("Quantity changed to %s", self._quantity_menu.currentText())
+        # is_custom = self._visualizer.colormap_name == "__custom__" # custom colormap flag
+
         if self._quantity_menu.currentText() == self._default_quantity_name:
             self._visualizer.quantity_name = None
         else:
@@ -649,6 +656,9 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
                 message.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
                 self._quantity_menu.setCurrentText(self._visualizer.quantity_name or self._default_quantity_name)
                 message.exec()
+        
+        # if is_custom: # if colormap is custom, give notification
+        #     QtWidgets.QMessageBox.information(self, "Custom Colormap", "Custom colormap has been applied to the new quantity.")
 
     def on_click_create_colormap(self):
         dialog = CustomColormapDialog(self._visualizer, parent=self)

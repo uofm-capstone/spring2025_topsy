@@ -161,6 +161,8 @@ class VisualizerBase:
         topsy_cmap.set_custom_lut(lut) # set the custom LUT to the topsy colormap
         self._colormap = topsy_cmap
 
+        self._colormap_name = "__custom__" # set the colormap name to custom
+
         # for colorbar - autorange vmin/vmax and store them
         self._colormap.autorange_vmin_vmax()
         self.vmin_vmax_is_set = True
@@ -246,12 +248,19 @@ class VisualizerBase:
 
     def _reinitialize_colormap_and_bar(self):
         if self._colormap_name == "__custom__": # handle custom colormap
-            lut = self._colormap.custom_lut
-            self._colormap = colormap.Colormap(self) # create topsy colormap object
-            self._colormap.set_custom_lut(lut)
-            self._colorbar = colorbar.ColorbarOverlay(self, self.vmin, self.vmax, "Custom", self._get_colorbar_label())
+            if hasattr(self._colormap, "custom_lut") and getattr(self._colormap, "use_custom_lut", False): # if the colormap has attribute custom_lut and use_custom_lut is false, then we need to set the custom LUT
+                lut = self._colormap.custom_lut # custom LUT is a numpy array of shape (256,3)
+                vmin, vmax, log_scale = self.vmin, self.vmax, self.log_scale
+                self._colormap = colormap.Colormap(self, weighted_average=self.quantity_name is not None)
+                self._colormap.set_custom_lut(lut) # set the custom LUT to the colormap
+                if self.vmin_vmax_is_set:
+                    self._colormap.vmin = vmin
+                    self._colormap.vmax = vmax
+                    self._colormap.log_scale = log_scale
+                self._colorbar = colorbar.ColorbarOverlay(self, self.vmin, self.vmax, "Custom", self._get_colorbar_label())
             return
 
+        # handle standard colormaps
         vmin, vmax, log_scale = self.vmin, self.vmax, self.log_scale
         self._colormap = colormap.Colormap(self, weighted_average=self.quantity_name is not None)
         if self.vmin_vmax_is_set:
