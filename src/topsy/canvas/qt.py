@@ -310,7 +310,8 @@ class CustomColormapDialog(QtWidgets.QDialog):
             self._visualizer.set_colormap(self._pending_colormap) # set the colormap in the visualizer
             self._visualizer._colormap.autorange_vmin_vmax() # reset vmin/vmax to default
             self._visualizer.invalidate() # redraw the visualizer
-            QtWidgets.QMessageBox.information(self, "Success", "Colormap applied.") # show success message
+            QtWidgets.QMessageBox.information(self, "Success", "Colormap applied.\n\nNote:\nYou might need to adjust the vmin/vmax manually for best visibility.\nUse 'Set vmin/vmax' in the toolbar.") # show success message
+            # warns the user that they will need to manually adjust the vmin/vmax if not showing up properly - temporary 'fix'
         else:
             QtWidgets.QMessageBox.warning(self, "No Colormap", "Please import a colormap.")
 
