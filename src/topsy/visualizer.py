@@ -574,4 +574,13 @@ class VisualizerBase:
 
 
 class Visualizer(view_synchronizer.SynchronizationMixin, VisualizerBase):
-    pass
+    def find_particles_in_sphere(self, center, radius):
+        # Get all particle positions from the data loader
+        all_positions = self.data_loader.get_positions()  # <--- this!
+
+        dists = np.linalg.norm(all_positions - center, axis=1)
+        mask = dists <= radius
+
+        logger.info(f"Found {np.sum(mask)} particles in sphere.")
+        return all_positions[mask]
+

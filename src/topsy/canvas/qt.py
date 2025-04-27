@@ -202,6 +202,8 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
 
         # setup toolbar to show text and icons
         self._toolbar.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
 
         self._load_icons()
 

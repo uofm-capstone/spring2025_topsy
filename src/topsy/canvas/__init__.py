@@ -117,6 +117,14 @@ class VisualizerCanvasBase:
             self._visualizer.invalidate()
         elif key=='h':
             self._visualizer.reset_view()
+        elif key == 'f':
+            if self._visualizer.show_sphere and hasattr(self._visualizer, "_sphere_overlay"):
+                center = self._visualizer._sphere_overlay._position
+                radius = self._visualizer._sphere_overlay._radius
+                particles = self._visualizer.find_particles_in_sphere(center, radius)
+                print(f"[SPHERE] Found {len(particles)} particles inside sphere")
+                print(particles)
+
 
     def mouse_wheel(self, delta_x, delta_y):
         if isinstance(self, wgpu.gui.jupyter.JupyterWgpuCanvas):
