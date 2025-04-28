@@ -163,6 +163,18 @@ class VisualizerBase:
         self.scale = config.DEFAULT_SCALE
         self._sph.position_offset = np.zeros(3)
 
+    def shrink_sphere(self):
+        if hasattr(self, "_sphere_overlay"):
+            self._sphere_overlay.set_radius(self._sphere_overlay._radius * 0.9)
+            self.invalidate()
+
+    def expand_sphere(self):
+        if hasattr(self, "_sphere_overlay"):
+            self._sphere_overlay.set_radius(self._sphere_overlay._radius * 1.1)
+            self.invalidate()
+
+
+
     @property
     def scale(self):
         """Return the scalefactor from kpc to viewport coordinates. Viewport will therefore be 2*scale wide."""

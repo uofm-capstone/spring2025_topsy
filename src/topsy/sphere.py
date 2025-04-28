@@ -62,6 +62,23 @@ class SphereOverlay(Line):
         self._position = np.array(position, dtype=np.float32)
         self._radius = radius
         self.path = self._generate_wireframe_sphere()  # triggers buffer rebuild    
+        self._setup_buffers()
+
+    def set_radius(self, radius):
+        self._radius = radius
+        self.path = self._generate_wireframe_sphere()
+
+        # Rebuild line segments
+        self._line_starts = np.ascontiguousarray(self.path[::2, :])
+        self._line_ends = np.ascontiguousarray(self.path[1::2, :])
+
+        # Upload to GPU
+        self._device.queue.write_buffer(self._vertex_buffer_starts, 0, self._line_starts)
+        self._device.queue.write_buffer(self._vertex_buffer_ends, 0, self._line_ends)
+
+        # Redraw
+        self._visualizer.invalidate()
+
 
     @property
     def position(self):

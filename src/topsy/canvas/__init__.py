@@ -124,6 +124,11 @@ class VisualizerCanvasBase:
                 particles = self._visualizer.find_particles_in_sphere(center, radius)
                 print(f"[SPHERE] Found {len(particles)} particles inside sphere")
                 print(particles)
+        elif key == '[':
+            self._visualizer.shrink_sphere()
+        elif key == ']':
+            self._visualizer.expand_sphere()
+
 
 
     def mouse_wheel(self, delta_x, delta_y):
