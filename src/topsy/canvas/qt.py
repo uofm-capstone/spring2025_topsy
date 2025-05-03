@@ -227,7 +227,8 @@ def load_colormap(path: str) -> np.ndarray: # accepts path as a string, returns 
 
 class CustomColormapDialog(QtWidgets.QDialog):
     def __init__(self, visualizer, *args, parent=None):
-        super().__init__(*args)
+        super().__init__(parent) # explicity set the parent to the parent widget
+        self._parent_canvas = parent
         self._visualizer = visualizer
         self.setWindowTitle("Import Colormap")
         self.setFixedSize(300, 150)
@@ -244,7 +245,18 @@ class CustomColormapDialog(QtWidgets.QDialog):
 
         # preview bar
         self._preview_bar = QtWidgets.QLabel(self)
-        default_cmap = mpl.colormaps[self._visualizer.colormap_name] # default colormap for preview bar
+
+        # set the colormap of the preview bar to the current colormap
+        try:
+            if self._visualizer.colormap_name == "__custom__" and hasattr(self._visualizer._colormap, "to_matplotlib"): # if current cmap is custom
+                default_cmap = self._visualizer._colormap.to_matplotlib() # previewbar should show the custom colormap
+            else: # if current cmap is not custom
+                default_cmap = mpl.colormaps[self._visualizer.colormap_name] # previewbar should show the current cmap
+        except Exception:
+            default_cmap = mpl.colormaps["twilight_shifted"] # set twilight_shifted as a fallback if exception is raised 
+
+        # default_cmap = mpl.colormaps[self._visualizer.colormap_name] # default colormap for preview bar
+
         self.update_preview_colormap(default_cmap)
 
         # preview bar layout
@@ -322,8 +334,17 @@ class CustomColormapDialog(QtWidgets.QDialog):
 
     # resets the colormap to one of the matplotlib defaults
     def reset_colormap(self):
-        self._visualizer.colormap_name = self._visualizer.colormap_name # reset to default colormap (the one currently chosen in the dropdown)
-        default_cmap = mpl.colormaps[self._visualizer.colormap_name] # set the default colormap to the visualization
+        current_cmap = self._visualizer.colormap_name # get the current colormap name
+        if current_cmap == "__custom__":
+            current_cmap = self._parent_canvas._colormap_menu.currentText() # if current cmap is '__custom__' then get the current colormap from the dropdown menu
+        
+        try: # try to set the preview bar cmap
+            default_cmap = mpl.colormaps[current_cmap] # get the cmap currently chosen in the dropdown menu
+            self._visualizer.colormap_name = current_cmap # set the cmap name to the dropdown menu cmap
+        except KeyError: # if exception triggered then fall back to twilight_shifted
+            default_cmap = mpl.colormaps["twilight_shifted"] # set the default colormap to twilight_shifted
+            self._visualizer.colormap_name = "twilight_shifted" # set the colormap name to twilight_shifted
+
         self.update_preview_colormap(default_cmap) # update the preview bar
         QtWidgets.QMessageBox.information(self, "Reset", "Reset to selected default colormap.") # show success message
 
@@ -641,7 +662,6 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
 
     def _quantity_menu_changed_action(self):
         logger.info("Quantity changed to %s", self._quantity_menu.currentText())
-        # is_custom = self._visualizer.colormap_name == "__custom__" # custom colormap flag
 
         if self._quantity_menu.currentText() == self._default_quantity_name:
             self._visualizer.quantity_name = None
@@ -656,9 +676,6 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
                 message.setStandardButtons(QtWidgets.QMessageBox.StandardButton.Ok)
                 self._quantity_menu.setCurrentText(self._visualizer.quantity_name or self._default_quantity_name)
                 message.exec()
-        
-        # if is_custom: # if colormap is custom, give notification
-        #     QtWidgets.QMessageBox.information(self, "Custom Colormap", "Custom colormap has been applied to the new quantity.")
 
     def on_click_create_colormap(self):
         dialog = CustomColormapDialog(self._visualizer, parent=self)

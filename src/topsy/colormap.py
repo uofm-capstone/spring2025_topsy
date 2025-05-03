@@ -82,11 +82,8 @@ class Colormap:
             rgba[:, :3] = self.custom_lut
             rgba[:, 3] = 1.0
         else: # use the default colormap
-            try:
-                cmap = matplotlib.colormaps[self._colormap_name] # one of the matplotlib default colormaps
-            except KeyError: # if the colormap is not found, fall back to viridis
-                logger.warning(f"Colormap name '{self._colormap_name}' not found. Falling back to 'viridis'.")
-                cmap = matplotlib.colormaps["viridis"]
+            cmap_name = self._colormap_name if self._colormap_name in matplotlib.colormaps else "twilight_shifted"
+            cmap = matplotlib.colormaps[cmap_name] # one of the matplotlib default colormaps
             rgba = cmap(np.linspace(0.001, 0.999, num_points)).astype(np.float32) # create a texture from the colormap
 
         self._texture = self._device.create_texture(

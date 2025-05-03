@@ -157,7 +157,10 @@ class VisualizerBase:
 
     def set_colormap(self, cmap: matplotlib.colors.Colormap): # set colormap to a matplotlib colormap
         lut = cmap(np.linspace(0, 1, 256))[:, :3] # to use in topsy we have to convert the colormap format
-        topsy_cmap = colormap.Colormap(self) # create topsy colormap object
+        current_quantity = self.quantity_name
+        if current_quantity is not None:
+            self.data_loader.quantity_name = None
+        topsy_cmap = colormap.Colormap(self, weighted_average=False) # create topsy colormap object
         topsy_cmap.set_custom_lut(lut) # set the custom LUT to the topsy colormap
         self._colormap = topsy_cmap
 
@@ -165,9 +168,11 @@ class VisualizerBase:
 
         # for colorbar - autorange vmin/vmax and store them
         self._colormap.autorange_vmin_vmax()
-        self.vmin_vmax_is_set = True
+        # self.vmin_vmax_is_set = True
         self.original_vmin = self._colormap.vmin
         self.original_vmax = self._colormap.vmax
+        self.vmin_vmax_is_set = True
+
         # set colorbar
         self._colorbar = colorbar.ColorbarOverlay(
         self,
@@ -176,6 +181,26 @@ class VisualizerBase:
         self._colormap,
         self._get_colorbar_label()
     )
+        
+        if current_quantity is not None:
+            self.data_loader.quantity_name = current_quantity
+
+            self._colormap = colormap.Colormap(self, weighted_average=True) # create topsy colormap object
+            self._colormap.set_custom_lut(lut)
+
+            self.vmin_vmax_is_set = False
+            self._colormap.autorange_vmin_vmax()
+            self.original_vmin = self._colormap.vmin
+            self.original_vmax = self._colormap.vmax
+            self.vmin_vmax_is_set = True
+
+            self._colorbar = colorbar.ColorbarOverlay(
+                self,
+                self._colormap.vmin,
+                self._colormap.vmax,
+                self._colormap,
+                self._get_colorbar_label()
+            )
 
         self.invalidate() # update the colormap and colorbar
 
@@ -233,6 +258,10 @@ class VisualizerBase:
 
     @quantity_name.setter
     def quantity_name(self, value):
+        has_custom_colormap = self._colormap_name == "__custom__" # check if colormap is custom
+        custom_lut = None
+        if has_custom_colormap and hasattr(self._colormap, "custom_lut"):
+            custom_lut = self._colormap.custom_lut.copy() # copy the custom LUT to avoid modifying the original one
 
         if value is not None:
             # see if we can get it. Assume it'll be cached, so this won't waste time.
@@ -244,6 +273,10 @@ class VisualizerBase:
         self.data_loader.quantity_name = value
         self.vmin_vmax_is_set = False
         self._reinitialize_colormap_and_bar()
+
+        if has_custom_colormap and custom_lut is not None: # if there was a custom LUT before quantity was changed, reapply the LUT to the initialized colormap
+            self._colormap.set_custom_lut(custom_lut) # set the custom LUT to the colormap
+
         self.invalidate()
 
     def _reinitialize_colormap_and_bar(self):
@@ -257,7 +290,7 @@ class VisualizerBase:
                     self._colormap.vmin = vmin
                     self._colormap.vmax = vmax
                     self._colormap.log_scale = log_scale
-                self._colorbar = colorbar.ColorbarOverlay(self, self.vmin, self.vmax, "Custom", self._get_colorbar_label())
+                self._colorbar = colorbar.ColorbarOverlay(self, self.vmin, self.vmax, self._colormap, self._get_colorbar_label()) # set the colorbar to the custom colormap object
             return
 
         # handle standard colormaps
