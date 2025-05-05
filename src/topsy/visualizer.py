@@ -31,6 +31,7 @@ class VisualizerBase:
     def __init__(self, data_loader_class = loader.TestDataLoader, data_loader_args = (),
                  *, render_resolution = config.DEFAULT_RESOLUTION, periodic_tiling = False,
                  colormap_name = config.DEFAULT_COLORMAP, canvas_class = canvas.VisualizerCanvas):
+        self.split_screen_enabled = False  # Flag to track split-screen state
         self._colormap_name = colormap_name
         self._render_resolution = render_resolution
         self.crosshairs_visible = False
@@ -442,6 +443,23 @@ class VisualizerBase:
                       )
         #else:
         #    raise RuntimeError("The wgpu library is using a gui backend that topsy does not recognize")
+
+    def enable_split_view(self, second_canvas):
+        #Enable split-screen mode.
+        self.split_screen_enabled = True
+        logger.info("✅ Split view has been enabled in the visualizer.")
+
+        self.second_canvas = second_canvas # The second canvas to be used for split-screen mode
+
+
+        self.invalidate(DrawReason.PRESENTATION_CHANGE)
+        self.second_canvas.request_draw(lambda: self.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=self.second_canvas.get_context().get_current_texture().create_view()))
+
+    def disable_split_view(self):
+        #Disable split-screen mode.
+        self.split_screen_enabled = False
+        logger.info("🚫 Split view has been disabled in the visualizer.")
+        self.invalidate(DrawReason.PRESENTATION_CHANGE)
 
 
 class Visualizer(view_synchronizer.SynchronizationMixin, VisualizerBase):
