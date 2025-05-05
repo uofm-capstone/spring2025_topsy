@@ -61,8 +61,11 @@ class SphereOverlay(Line):
     def set_position_and_radius(self, position, radius):
         self._position = np.array(position, dtype=np.float32)
         self._radius = radius
-        self.path = self._generate_wireframe_sphere()  # triggers buffer rebuild    
-        self._setup_buffers()
+        self.path = self._generate_wireframe_sphere()
+        self._device.queue.write_buffer(self._vertex_buffer_starts, 0, self._line_starts)
+        self._device.queue.write_buffer(self._vertex_buffer_ends, 0, self._line_ends)
+        self._visualizer.invalidate()
+
 
     def set_radius(self, radius):
         self._radius = radius
@@ -71,7 +74,7 @@ class SphereOverlay(Line):
         # Rebuild line segments
         self._line_starts = np.ascontiguousarray(self.path[::2, :])
         self._line_ends = np.ascontiguousarray(self.path[1::2, :])
-
+    
         # Upload to GPU
         self._device.queue.write_buffer(self._vertex_buffer_starts, 0, self._line_starts)
         self._device.queue.write_buffer(self._vertex_buffer_ends, 0, self._line_ends)
@@ -86,11 +89,28 @@ class SphereOverlay(Line):
     
     # function taken from existing simcube.py to render the sphere in the correct position and as a 3d object
     def encode_render_pass(self, command_encoder: wgpu.GPUCommandEncoder,
-                                target_texture_view: wgpu.GPUTextureView):
-        self._params["transform"] = (
+                        target_texture_view: wgpu.GPUTextureView):
+        transform = (
             self._visualizer._sph.last_transform_params["transform"]
             @ self._visualizer.sph_clipspace_to_screen_clipspace_matrix()
         )
+        self._params["transform"] = transform
+        self._params["vp_size_pix"] = target_texture_view.size[:2]
+        self._params["position"] = self._position  # might be unused, but safe to keep
+        self._device.queue.write_buffer(self._param_buffer, 0, self._params)
         super().encode_render_pass(command_encoder, target_texture_view)
 
 
+    def move_by(self, delta):
+        self._position += np.array(delta, dtype=np.float32)
+        self.path = self._generate_wireframe_sphere()
+
+        # Rebuild line segments
+        self._line_starts = np.ascontiguousarray(self.path[::2, :])
+        self._line_ends = np.ascontiguousarray(self.path[1::2, :])
+
+        # Upload new buffer data
+        self._device.queue.write_buffer(self._vertex_buffer_starts, 0, self._line_starts)
+        self._device.queue.write_buffer(self._vertex_buffer_ends, 0, self._line_ends)
+
+        self._visualizer.invalidate()

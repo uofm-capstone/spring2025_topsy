@@ -173,6 +173,13 @@ class VisualizerBase:
             self._sphere_overlay.set_radius(self._sphere_overlay._radius * 1.1)
             self.invalidate()
 
+    def move_sphere(self, dx=0.0, dy=0.0, dz=0.0):
+        if not hasattr(self, "_sphere_overlay"):
+            return
+        current_pos = self._sphere_overlay.position
+        new_pos = current_pos + np.array([dx, dy, dz], dtype=np.float32)
+        self._sphere_overlay.set_position_and_radius(new_pos, self._sphere_overlay._radius)
+        self.invalidate()
 
 
     @property

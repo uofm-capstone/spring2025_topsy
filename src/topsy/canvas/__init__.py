@@ -110,12 +110,15 @@ class VisualizerCanvasBase:
 
 
     def key_up(self, key):
-        if key=='s':
+        move_delta = 25  # Adjust for desired speed
+        sphere = self._visualizer._sphere_overlay
+
+        if key == 'v':
             self._visualizer.save()
-        elif key=='r':
+        elif key == 'r':
             self._visualizer.vmin_vmax_is_set = False
             self._visualizer.invalidate()
-        elif key=='h':
+        elif key == 'h':
             self._visualizer.reset_view()
         elif key == 'f':
             if self._visualizer.show_sphere and hasattr(self._visualizer, "_sphere_overlay"):
@@ -128,6 +131,20 @@ class VisualizerCanvasBase:
             self._visualizer.shrink_sphere()
         elif key == ']':
             self._visualizer.expand_sphere()
+        elif key == 'w':
+            sphere.move_by((0, 0, -move_delta))
+        elif key == 's':
+            sphere.move_by((0, 0, move_delta))
+        elif key == 'a':
+            sphere.move_by((-move_delta, 0, 0))
+        elif key == 'd':
+            sphere.move_by((move_delta, 0, 0))
+        elif key == 'q':
+            sphere.move_by((0, move_delta, 0))
+        elif key == 'e':
+            sphere.move_by((0, -move_delta, 0))
+
+        
 
 
 
