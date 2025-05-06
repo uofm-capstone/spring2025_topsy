@@ -14,7 +14,12 @@ class ColorbarOverlay(Overlay):
         self._aspect_ratio = 0.2
         self.vmin = vmin
         self.vmax = vmax
-        self.colormap = colormap
+        if isinstance(colormap, str): # if it's a string, it should be a valid matplotlib colormap name
+            self._colormap = matplotlib.colormaps[colormap]
+        elif hasattr(colormap, "to_matplotlib"): # if it's a colormap object (custom colormaps), convert it to a matplotlib colormap
+            self._colormap = colormap.to_matplotlib()
+        else: 
+            self.colormap = colormap
         self.label = label
         self._last_width = None
         self._last_height = None
@@ -42,7 +47,14 @@ class ColorbarOverlay(Overlay):
 
         canvas = matplotlib.backends.backend_agg.FigureCanvasAgg(fig)
 
-        cmap = matplotlib.colormaps[self.colormap]
+        # set colormap for colorbar based on what kind of colormap it is (custom or matplotlib)
+        if isinstance(self._colormap, str): # if it's a string, it should be a valid matplotlib colormap name
+            cmap = matplotlib.colormaps[self._colormap]
+        elif hasattr(self._colormap, "to_matplotlib"): # if it's a colormap object (custom colormaps), convert it to a matplotlib colormap
+            cmap = self._colormap.to_matplotlib()
+        else: 
+            cmap = self._colormap
+            
         cNorm = colors.Normalize(vmin=self.vmin, vmax=self.vmax)
         cb1 = matplotlib.colorbar.ColorbarBase(fig.add_axes([0.05, 0.05, 0.3, 0.9]),
                                                cmap=cmap, norm=cNorm, orientation='vertical')

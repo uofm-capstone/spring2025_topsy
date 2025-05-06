@@ -46,8 +46,8 @@ class VisualizerCanvasBase:
                     self.drag(event['x'] - self._last_x, event['y'] - self._last_y)
                 else:
                     self.shift_drag(event['x'] - self._last_x, event['y'] - self._last_y)
-            else:
-                self.hover(event['x'] - self._last_x, event['y'] - self._last_y)
+            # else:
+            #     self.hover(event['x'] - self._last_x, event['y'] - self._last_y)
 
             self._last_x = event['x']
             self._last_y = event['y']
@@ -90,11 +90,6 @@ class VisualizerCanvasBase:
             pass
         super().handle_event(event)
 
-    def hover(self, dx, dy): # Defines an event for mouse hovering
-        # print(f"Canvas Event: dx={dx}, dy={dy}") # debugging
-        self._visualizer.hover(dx, dy) # calls hover function from visualizer.py
-        self._visualizer.invalidate() # updates visualization
-
     def drag(self, dx, dy):
         self._visualizer.rotate(dx*0.01, dy*0.01)
 
@@ -108,6 +103,14 @@ class VisualizerCanvasBase:
 
         self._visualizer.crosshairs_visible = True
 
+    # when custom colormap is set, set "Custom" as the current cmap in the dropdown colormap menu
+    def on_colormap_set_custom(self):
+        pass
+        # index = self._colormap_menu.findText("Custom")
+        # if index == -1: # if "Custom" is not in the menu, add it
+        #     self._colormap_menu.addItem("Custom")
+        #     index = self._colormap_menu.findText("Custom")
+        # self._colormap_menu.setCurrentIndex(index)
 
     def key_up(self, key):
         move_delta = 25  # Adjust for desired speed
@@ -117,6 +120,7 @@ class VisualizerCanvasBase:
             self._visualizer.save()
         elif key == 'r':
             self._visualizer.vmin_vmax_is_set = False
+            self._contrast_slider.setValue(100) # reset contrast slider to default 100
             self._visualizer.invalidate()
         elif key == 'h':
             self._visualizer.reset_view()

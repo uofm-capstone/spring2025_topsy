@@ -4,6 +4,9 @@ import logging
 import numpy as np
 import time
 import wgpu
+import math
+import time
+import matplotlib
 
 from contextlib import contextmanager
 
@@ -48,6 +51,10 @@ class VisualizerBase:
         self.last_mouse_x = 0
         self.last_mouse_y = 0
 
+        # initialize mouse absolute position attributes
+        self.abs_x = 0
+        self.abs_y = 0
+
         self.show_sphere = False
         self.canvas = canvas_class(visualizer=self, title="topsy")
 
@@ -61,6 +68,12 @@ class VisualizerBase:
 
         self._colormap = colormap.Colormap(self, weighted_average = False)
         self._periodic_tiling = periodic_tiling
+
+        # maintain original min/max values for color shift to reference (instead of compounding based on updated vmin/vmax)
+        self.original_vmin = None # by default, vmin/vmax are set to 0/1 -> set to None initially, wait for autorange_vmin_vmax to set the colormap's original vmin/vmax
+        self.original_vmax = None
+        
+        self._colormap_exponent = 1.0 # exponent to shift vmin/vmax by (1.0 means linear shift)
 
         if periodic_tiling:
             self._sph = periodic_sph.PeriodicSPH(self, self.render_texture)
@@ -124,12 +137,85 @@ class VisualizerBase:
         dx_rotation_matrix = self._x_rotation_matrix(x_angle)
         dy_rotation_matrix = self._y_rotation_matrix(y_angle)
         self.rotation_matrix = dx_rotation_matrix @ dy_rotation_matrix @ self.rotation_matrix
+    
+    # this function is used to shift the vmin/vmax values of the colormap based on the value (exponent) of the UI contrast slider    
+    def set_colormap_exponent(self, exponent):
+        vmin = self.original_vmin
+        vmax = self.original_vmax
 
-    def hover(self, dx, dy): # defines event for mouse hover
-        self.last_mouse_x += dx  # updates mouse position
-        self.last_mouse_y += dy
-        # print(f"Mouse position: {self.last_mouse_x}, {self.last_mouse_y}") # debugging
-        self.invalidate(DrawReason.CHANGE) # signals that the visualization needs updating because of this event
+        span = vmax - vmin # range between original vmin and vmax
+
+        # make sure exponent is within bounds
+        exponent = np.clip(exponent, 0.5, 1.5)
+
+        # boost dark areas (right side of slider)
+        if exponent > 1.0:
+            factor = (exponent - 1.0) * span * 0.8 # when on right side of slider, we are shifting the vmax downwards to boost the dark areas
+            new_vmin = vmin
+            new_vmax = vmax - factor
+        # boost bright areas (left side of slider)
+        elif exponent < 1.0: # use exponent to shift vmin/vmax from original values
+            factor = (1.0 - exponent) * span * 0.8  # when on left side of slider, we are shifting the vmin upwards to boost the bright areas
+            new_vmin = vmin + factor
+            new_vmax = vmax
+        # if exponent is 1, maintain original vmin/vmax values
+        else:
+            new_vmin = vmin
+            new_vmax = vmax
+
+        # update vmin and vmax
+        self.vmin = new_vmin
+        self.vmax = new_vmax
+        self.invalidate(DrawReason.CHANGE)
+
+    def set_colormap(self, cmap: matplotlib.colors.Colormap): # set colormap to a matplotlib colormap
+        lut = cmap(np.linspace(0, 1, 256))[:, :3] # to use in topsy we have to convert the colormap format
+        current_quantity = self.quantity_name
+        if current_quantity is not None:
+            self.data_loader.quantity_name = None
+        topsy_cmap = colormap.Colormap(self, weighted_average=False) # create topsy colormap object
+        topsy_cmap.set_custom_lut(lut) # set the custom LUT to the topsy colormap
+        self._colormap = topsy_cmap
+
+        self._colormap_name = "__custom__" # set the colormap name to custom
+
+        # for colorbar - autorange vmin/vmax and store them
+        self._colormap.autorange_vmin_vmax()
+        # self.vmin_vmax_is_set = True
+        self.original_vmin = self._colormap.vmin
+        self.original_vmax = self._colormap.vmax
+        self.vmin_vmax_is_set = True
+
+        # set colorbar
+        self._colorbar = colorbar.ColorbarOverlay(
+        self,
+        self._colormap.vmin,
+        self._colormap.vmax,
+        self._colormap,
+        self._get_colorbar_label()
+    )
+        
+        if current_quantity is not None:
+            self.data_loader.quantity_name = current_quantity
+
+            self._colormap = colormap.Colormap(self, weighted_average=True) # create topsy colormap object
+            self._colormap.set_custom_lut(lut)
+
+            self.vmin_vmax_is_set = False
+            self._colormap.autorange_vmin_vmax()
+            self.original_vmin = self._colormap.vmin
+            self.original_vmax = self._colormap.vmax
+            self.vmin_vmax_is_set = True
+
+            self._colorbar = colorbar.ColorbarOverlay(
+                self,
+                self._colormap.vmin,
+                self._colormap.vmax,
+                self._colormap,
+                self._get_colorbar_label()
+            )
+
+        self.invalidate() # update the colormap and colorbar
 
     @property
     def rotation_matrix(self):
@@ -220,6 +306,10 @@ class VisualizerBase:
 
     @quantity_name.setter
     def quantity_name(self, value):
+        has_custom_colormap = self._colormap_name == "__custom__" # check if colormap is custom
+        custom_lut = None
+        if has_custom_colormap and hasattr(self._colormap, "custom_lut"):
+            custom_lut = self._colormap.custom_lut.copy() # copy the custom LUT to avoid modifying the original one
 
         if value is not None:
             # see if we can get it. Assume it'll be cached, so this won't waste time.
@@ -231,9 +321,27 @@ class VisualizerBase:
         self.data_loader.quantity_name = value
         self.vmin_vmax_is_set = False
         self._reinitialize_colormap_and_bar()
+
+        if has_custom_colormap and custom_lut is not None: # if there was a custom LUT before quantity was changed, reapply the LUT to the initialized colormap
+            self._colormap.set_custom_lut(custom_lut) # set the custom LUT to the colormap
+
         self.invalidate()
 
     def _reinitialize_colormap_and_bar(self):
+        if self._colormap_name == "__custom__": # handle custom colormap
+            if hasattr(self._colormap, "custom_lut") and getattr(self._colormap, "use_custom_lut", False): # if the colormap has attribute custom_lut and use_custom_lut is false, then we need to set the custom LUT
+                lut = self._colormap.custom_lut # custom LUT is a numpy array of shape (256,3)
+                vmin, vmax, log_scale = self.vmin, self.vmax, self.log_scale
+                self._colormap = colormap.Colormap(self, weighted_average=self.quantity_name is not None)
+                self._colormap.set_custom_lut(lut) # set the custom LUT to the colormap
+                if self.vmin_vmax_is_set:
+                    self._colormap.vmin = vmin
+                    self._colormap.vmax = vmax
+                    self._colormap.log_scale = log_scale
+                self._colorbar = colorbar.ColorbarOverlay(self, self.vmin, self.vmax, self._colormap, self._get_colorbar_label()) # set the colorbar to the custom colormap object
+            return
+
+        # handle standard colormaps
         vmin, vmax, log_scale = self.vmin, self.vmax, self.log_scale
         self._colormap = colormap.Colormap(self, weighted_average=self.quantity_name is not None)
         if self.vmin_vmax_is_set:
@@ -298,6 +406,10 @@ class VisualizerBase:
             logger.info("Setting vmin/vmax - testing")
             self._colormap.autorange_vmin_vmax()
             self.vmin_vmax_is_set = True
+
+            self.original_vmin = self._colormap.vmin # set original vmin/vmax values for visualizer to use -> without this, visualizer uses default vmin/vmax (0,1) to reference for the colormap shifting limits
+            self.original_vmax = self._colormap.vmax
+
             self._refresh_colorbar()
 
         command_encoder = self.device.create_command_encoder()
