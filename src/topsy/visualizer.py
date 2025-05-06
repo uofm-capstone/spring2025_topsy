@@ -23,6 +23,8 @@ from . import line
 from . import simcube
 from . import view_synchronizer
 from .drawreason import DrawReason
+from .sphere import SphereOverlay  # assuming you save the SphereOverlay class in sphere.py
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -34,6 +36,7 @@ class VisualizerBase:
     def __init__(self, data_loader_class = loader.TestDataLoader, data_loader_args = (),
                  *, render_resolution = config.DEFAULT_RESOLUTION, periodic_tiling = False,
                  colormap_name = config.DEFAULT_COLORMAP, canvas_class = canvas.VisualizerCanvas):
+        self.split_screen_enabled = False  # Flag to track split-screen state
         self._colormap_name = colormap_name
         self._render_resolution = render_resolution
         self.crosshairs_visible = False
@@ -43,14 +46,21 @@ class VisualizerBase:
 
         self.show_colorbar = True
         self.show_scalebar = True
+        
+        # initialize mouse position attributes
+        self.last_mouse_x = 0
+        self.last_mouse_y = 0
 
         # initialize mouse absolute position attributes
         self.abs_x = 0
         self.abs_y = 0
 
+        self.show_sphere = False
         self.canvas = canvas_class(visualizer=self, title="topsy")
 
         self._setup_wgpu()
+
+        self._sphere_overlay = SphereOverlay(self, position=(0, 0, 0), radius=2000) # previous radius was too tiny, probably need to set default radius proportional to the simulation size
 
         self.data_loader = data_loader_class(self.device, *data_loader_args)
 
@@ -89,6 +99,9 @@ class VisualizerBase:
         self._render_timer = util.TimeGpuOperation(self.device)
 
         self.invalidate(DrawReason.INITIAL_UPDATE)
+
+        self.projection_matrix = self.create_projection_matrix()
+        self.view_matrix = np.eye(4)
 
     def _setup_wgpu(self):
         self.adapter: wgpu.GPUAdapter = wgpu.gpu.request_adapter(power_preference="high-performance")
@@ -237,6 +250,41 @@ class VisualizerBase:
         self.scale = config.DEFAULT_SCALE
         self._sph.position_offset = np.zeros(3)
 
+    def shrink_sphere(self):
+        if hasattr(self, "_sphere_overlay"):
+            self._sphere_overlay.set_radius(self._sphere_overlay._radius * 0.9)
+            self.invalidate()
+
+    def expand_sphere(self):
+        if hasattr(self, "_sphere_overlay"):
+            self._sphere_overlay.set_radius(self._sphere_overlay._radius * 1.1)
+            self.invalidate()
+
+    def move_sphere(self, dx=0.0, dy=0.0, dz=0.0):
+        if not hasattr(self, "_sphere_overlay"):
+            return
+        current_pos = self._sphere_overlay.position
+        new_pos = current_pos + np.array([dx, dy, dz], dtype=np.float32)
+        self._sphere_overlay.set_position_and_radius(new_pos, self._sphere_overlay._radius)
+        self.invalidate()
+
+    def show_average_properties_in_sphere(self):
+        """Find particles in sphere and show averaged properties in the popup."""
+        if not (self.show_sphere and hasattr(self, "_sphere_overlay")):
+            return
+
+        center = self._sphere_overlay._position
+        radius = self._sphere_overlay._radius
+        particles = self.find_particles_in_sphere(center, radius)
+        print(f"[SPHERE] Found {len(particles)} particles inside sphere")
+        print(particles)
+
+        if particles.shape[0] > 0:
+            avg_props = self.get_average_properties(particles)
+
+            if hasattr(self.canvas, "popup"):
+                self.canvas.popup.update_info(avg_props)
+
     @property
     def scale(self):
         """Return the scalefactor from kpc to viewport coordinates. Viewport will therefore be 2*scale wide."""
@@ -375,6 +423,8 @@ class VisualizerBase:
             self._colorbar.encode_render_pass(command_encoder, target_texture_view)
         if self.show_scalebar:
             self._scalebar.encode_render_pass(command_encoder, target_texture_view)
+        if self.show_sphere:
+            self._sphere_overlay.encode_render_pass(command_encoder, target_texture_view)
         if self.crosshairs_visible:
             self._crosshairs.encode_render_pass(command_encoder, target_texture_view)
         if self._periodic_tiling:
@@ -551,6 +601,166 @@ class VisualizerBase:
         #else:
         #    raise RuntimeError("The wgpu library is using a gui backend that topsy does not recognize")
 
+    def create_projection_matrix(self, fov=60, aspect_ratio=1.0, near=0.1, far=1000.0):
+        """Creates a simple perspective projection matrix for 3D coordinate conversion."""
+        f = 1.0 / np.tan(np.radians(fov) / 2.0)
+        return np.array([
+            [f / aspect_ratio, 0,  0,                                  0],
+            [0,               f,  0,                                  0],
+            [0,               0,  (far + near) / (near - far),       -1],
+            [0,               0,  (2 * far * near) / (near - far),    0]
+        ], dtype=np.float32)
+    
+    def screen_to_world(self, x, y, screen_width, screen_height):
+        """Convert 2D screen space (x, y) to a 3D world space ray."""
+        
+        import numpy as np  # Ensure numpy is imported
+
+        # Step 1: Normalize screen coordinates to NDC (-1 to 1 range)
+        ndc_x = (2.0 * x) / screen_width - 1.0
+        ndc_y = 1.0 - (2.0 * y) / screen_height  # Flip Y-axis for OpenGL-style coordinates
+        
+        # Step 2: Convert to homogeneous clip space
+        clip_coords = np.array([ndc_x, ndc_y, -1.0, 1.0])  # Assume looking into -Z direction
+
+        # Step 3: Convert to eye space using inverse projection matrix
+        inv_projection = np.linalg.inv(self.projection_matrix)  
+        eye_coords = inv_projection @ clip_coords
+        eye_coords = np.array([eye_coords[0], eye_coords[1], -1.0, 0.0])  # Reset depth
+
+        # Step 4: Convert to world space using inverse view matrix
+        inv_view = np.linalg.inv(self.view_matrix)  
+        world_ray = inv_view @ eye_coords
+        world_ray = world_ray[:3]  # Extract 3D direction
+
+        # Normalize the ray direction
+        world_ray = world_ray / np.linalg.norm(world_ray)
+        
+        return world_ray
+    
+    def get_particle_positions(self):
+        """Retrieve all particle positions from the loaded simulation."""
+        if not hasattr(self, "data_loader"):
+            print("Error: No data loader found.")
+            return np.array([])
+
+        # Assuming `self.data_loader` has a function to get positions
+        return self.data_loader.get_positions()
+    
+    def find_nearest_particle(self, ray_origin, ray_direction):
+        """Find the closest particle along the given ray."""
+        import numpy as np
+
+        positions = self.get_particle_positions()
+        if positions.size == 0:
+            print("No particle positions available.")
+            return None
+
+        # Step 1: Compute the vector from the ray origin to each particle
+        ray_to_particles = positions - ray_origin
+
+        # Step 2: Project this vector onto the ray direction
+        projections = np.dot(ray_to_particles, ray_direction)
+
+        # Step 3: Compute perpendicular distance from ray to particles
+        closest_points = ray_origin + np.outer(projections, ray_direction)
+        distances = np.linalg.norm(positions - closest_points, axis=1)
+
+        # Step 4: Find the particle with the smallest perpendicular distance
+        min_index = np.argmin(distances)
+        min_distance = distances[min_index]
+
+        # Step 5: Define a selection threshold (adjust as needed)
+        selection_threshold = 0.05  # Adjust based on your simulation scale
+
+        if min_distance < selection_threshold:
+            print(f"Selected Particle {min_index} at {positions[min_index]} (Distance: {min_distance})")
+            return positions[min_index]  # Return the selected particle position
+
+        print("No particle selected.")
+        return None
+
+    def get_particle_properties(self, particle_position):
+        """Retrieve and print all available properties of the selected particle dynamically."""
+        import numpy as np
+
+        if not hasattr(self, "data_loader"):
+            print("Error: No data loader found.")
+            return {}
+
+        positions = self.get_particle_positions()
+        if positions.size == 0:
+            print("No particle positions available.")
+            return {}
+
+        # Find the index of the selected particle
+        index = np.where((positions == particle_position).all(axis=1))[0]
+        if index.size == 0:
+            print("Error: Selected particle not found in dataset.")
+            return {}
+
+        index = index[0]  # Get the first match
+
+        # Get all available properties in the dataset
+        available_properties = list(self.data_loader.snapshot.keys())
+
+        # Dynamically retrieve and store properties
+        properties = {}
+        for prop_name in available_properties:
+            try:
+                prop_value = self.data_loader.get_named_quantity(prop_name)[index]
+                properties[prop_name.capitalize()] = prop_value
+            except KeyError:
+                continue  # Skip missing properties
+
+        return properties
+    
+    def toggle_sphere_visibility(self, show):
+        self.show_sphere = show
+        self.invalidate()
+
+    def get_average_properties(self, selected_positions):
+        """Compute average mass, density, temperature for given positions."""
+        pos_all = self.data_loader.get_positions()
+        indices = np.flatnonzero((pos_all[:, None] == selected_positions).all(-1).any(1))
+
+        props = {}
+        for key in ["mass", "rho", "temp"]:
+            try:
+                values = self.data_loader.get_named_quantity(key)[indices]
+                props[key.capitalize()] = float(np.mean(values))
+            except Exception:
+                continue
+        return props
+
+
+
+    def enable_split_view(self, second_canvas):
+        #Enable split-screen mode.
+        self.split_screen_enabled = True
+        logger.info("✅ Split view has been enabled in the visualizer.")
+
+        self.second_canvas = second_canvas # The second canvas to be used for split-screen mode
+
+
+        self.invalidate(DrawReason.PRESENTATION_CHANGE)
+        self.second_canvas.request_draw(lambda: self.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=self.second_canvas.get_context().get_current_texture().create_view()))
+
+    def disable_split_view(self):
+        #Disable split-screen mode.
+        self.split_screen_enabled = False
+        logger.info("🚫 Split view has been disabled in the visualizer.")
+        self.invalidate(DrawReason.PRESENTATION_CHANGE)
+
 
 class Visualizer(view_synchronizer.SynchronizationMixin, VisualizerBase):
-    pass
+    def find_particles_in_sphere(self, center, radius):
+        # Get all particle positions from the data loader
+        all_positions = self.data_loader.get_positions()  # <--- this!
+
+        dists = np.linalg.norm(all_positions - center, axis=1)
+        mask = dists <= radius
+
+        logger.info(f"Found {np.sum(mask)} particles in sphere.")
+        return all_positions[mask]
+
