@@ -13,6 +13,7 @@ import os
 import time
 import logging
 import matplotlib as mpl
+import numpy as np
 
 from typing import TYPE_CHECKING, Optional
 
@@ -202,12 +203,16 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._resize_timer = QtCore.QTimer()
         self._resize_timer.setSingleShot(True)
         self._resize_timer.timeout.connect(self._apply_resize)
+        
+        self.popup = ParticleInfoPopup()  # Create the popup window
 
         self._toolbar = QtWidgets.QToolBar()
         self._toolbar.setIconSize(QtCore.QSize(16, 16))
 
         # setup toolbar to show text and icons
         self._toolbar.setToolButtonStyle(QtCore.Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        
+        self.setFocusPolicy(QtCore.Qt.FocusPolicy.StrongFocus)
 
         self._load_icons()
 
@@ -275,6 +280,18 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar.addWidget(self._quantity_menu)
         self._toolbar.addSeparator()
         self._toolbar.addAction(self._link_action)
+
+        # Add toggle button for showing/hiding the sphere overlay
+        self._sphere_toggle = QtGui.QAction("Sphere", self)
+        self._sphere_toggle.setCheckable(True)
+        self._sphere_toggle.setChecked(self._visualizer.show_sphere)
+
+        def toggle_sphere_visibility(checked):
+            self._visualizer.show_sphere = checked
+            self._visualizer.invalidate()
+        self._sphere_toggle.triggered.connect(lambda checked: self._visualizer.toggle_sphere_visibility(checked))
+        self._toolbar.addAction(self._sphere_toggle)
+
         self._toolbar.addSeparator()
         self._toolbar.addAction(self._splitscreen_action)
         self._recorder = None
@@ -468,6 +485,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
 
             self._visualizer.enable_split_view(self._second_subwidget) # Enable split view in the visualizer
 
+            
             # Mirror rendering onto the second canvas
             def draw_both():
                 logger.info("🔁 Drawing both canvases")
@@ -533,3 +551,34 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
     @classmethod
     def call_later(cls, delay, fn, *args):
         call_later(delay, fn, *args)
+
+class ParticleInfoPopup(QtWidgets.QWidget):
+    """Popup window to display selected particle details."""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Particle Information")
+        self.setGeometry(100, 100, 350, 250)  # Set default size
+        self.setWindowFlags(QtCore.Qt.WindowType.Window)  # Make it a standalone window
+
+        # Layout
+        self.layout = QtWidgets.QVBoxLayout()
+        self.label = QtWidgets.QLabel("No particle selected")
+        self.layout.addWidget(self.label)
+
+        # Close button
+        self.close_button = QtWidgets.QPushButton("Close")
+        self.close_button.clicked.connect(self.hide)
+        self.layout.addWidget(self.close_button)
+
+        self.setLayout(self.layout)
+
+    def update_info(self, avg_properties):
+        """Display averaged particle properties."""
+        if not avg_properties:
+            self.label.setText("No particles found.")
+            return
+
+        lines = [f"{key}: {value:.4f}" for key, value in avg_properties.items()]
+        self.label.setText("\n".join(lines))
+        self.show()
