@@ -194,6 +194,15 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         super().__init__(**kwargs)
         self._all_instances.append(self)
         self.hide()
+
+        # Track split-screen state (default = False)
+        self._splitscreen_enabled = False
+
+        # Add a debounce timer to prevent excessive resizing
+        self._last_width = self.width()  # Store the last known window width
+        self._resize_timer = QtCore.QTimer()
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.timeout.connect(self._apply_resize)
         
         self.popup = ParticleInfoPopup()  # Create the popup window
 
@@ -228,6 +237,11 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._link_action.setIconText("Link")
         self._link_action.triggered.connect(self.on_click_link)
 
+        # Splitscreen Button
+        self._splitscreen_action = QtGui.QAction(self._splitscreen_icon, "Splitscreen", self)
+        self._splitscreen_action.setCheckable(True)
+        self._splitscreen_action.triggered.connect(self.on_click_splitscreen)
+
 
         self._colormap_menu = QtWidgets.QComboBox()
         self._colormap_menu.addItems(mpl.colormaps.keys())
@@ -238,7 +252,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._quantity_menu.addItem(self._default_quantity_name)
         self._quantity_menu.setEditable(True)
 
-
+    
 
         self._quantity_menu.setLineEdit(MyLineEdit())
 
@@ -278,19 +292,31 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._sphere_toggle.triggered.connect(lambda checked: self._visualizer.toggle_sphere_visibility(checked))
         self._toolbar.addAction(self._sphere_toggle)
 
+        self._toolbar.addSeparator()
+        self._toolbar.addAction(self._splitscreen_action)
         self._recorder = None
 
+        # Create second subwidget and splitter
+        self._second_subwidget = WgpuCanvas(parent=self)
+        self._second_subwidget.hide()
 
+        self._splitter = QtWidgets.QSplitter(QtCore.Qt.Orientation.Horizontal)
+        self._splitter.addWidget(self._subwidget)
+        self._splitter.addWidget(self._second_subwidget)
+        self._splitter.setSizes([self.width() // 2, self.width() // 2])
+        self._splitter.setChildrenCollapsible(False)
 
-        # now replace the wgpu layout with our own
+        # Replace layout
         layout = self.layout()
         layout.removeWidget(self._subwidget)
 
-        our_layout = PySide6.QtWidgets.QVBoxLayout()
-        our_layout.addWidget(self._subwidget)
-        our_layout.addWidget(self._toolbar)
-        our_layout.setContentsMargins(0, 0, 0, 0)
-        our_layout.setSpacing(0)
+        main_layout = QtWidgets.QVBoxLayout()
+        main_layout.addWidget(self._splitter)
+        main_layout.addWidget(self._toolbar)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        layout.addLayout(main_layout)
 
         self._toolbar.adjustSize()
 
@@ -298,7 +324,33 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._toolbar_update_timer.timeout.connect(self._update_toolbar)
         self._toolbar_update_timer.start(100)
 
-        layout.addLayout(our_layout)
+
+        
+
+    def resizeEvent(self, event):
+        """Resize visualization only if the window width has changed significantly."""
+        super().resizeEvent(event)
+
+        # ✅ Ensure this check only runs when _last_width is already set
+        if hasattr(self, "_last_width") and abs(self.width() - self._last_width) > 10:
+            self._last_width = self.width()
+            self._resize_timer.start(200)  # Start debounce timer
+
+    def _apply_resize(self):
+        """Resize visualizations and manage split-screen mode."""
+        toolbar_height = self._toolbar.sizeHint().height()
+        new_height = max(self.height() - toolbar_height, 300)
+
+        if self._splitscreen_enabled:
+            self._splitter.setSizes([self.width() // 2, self.width() // 2])
+        else:
+            self._splitter.setSizes([self.width(), 0])  # Collapse right side
+
+        self._subwidget.setMinimumSize(300, 300)
+        self._second_subwidget.setMinimumSize(300, 300)
+
+        self._toolbar.setMinimumSize(self.width(), toolbar_height)
+        self._toolbar.setMaximumSize(self.width(), toolbar_height)
 
     def __del__(self):
         try:
@@ -315,6 +367,7 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
         self._save_movie_icon = _get_icon("movie.png")
         self._import_icon = _get_icon("load_script.png")
         self._export_icon = _get_icon("save_script.png")
+        self._splitscreen_icon = _get_icon("splitscreen.png")  # Add new icon here
 
     def _colormap_menu_changed_action(self):
         logger.info("Colormap changed to %s", self._colormap_menu.currentText())
@@ -404,6 +457,55 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
             for instance in self._all_instances:
                 synchronizer.add_view(instance._visualizer)
 
+    def on_click_splitscreen(self):
+        """Toggle split-screen mode when the button is pressed."""
+        self._splitscreen_enabled = self._splitscreen_action.isChecked()
+        
+        if self._splitscreen_enabled:
+            logger.info("✅ Split-screen enabled")
+            # Show the second subwidget
+            main_context = self._subwidget.get_context()
+
+            # Check if the main context is properly configured
+            if not hasattr(main_context, "_device") or main_context._device is None:
+                logger.error("Main Canvas is not properly configured.")
+                main_context.configure(device=self.device, format="bgra8unorm")
+
+
+            # Configure the second subwidget
+            if not hasattr(self, "_second_subwidget_initialized"):
+                    device = main_context._device
+                    format = "bgra8unorm"
+
+
+                    self._second_subwidget.get_context().configure(device=device, format=format) # configure the second subwidget
+                    self._second_subwidget_initialized = True
+
+            self._second_subwidget.show()
+
+            self._visualizer.enable_split_view(self._second_subwidget) # Enable split view in the visualizer
+
+            
+            # Mirror rendering onto the second canvas
+            def draw_both():
+                logger.info("🔁 Drawing both canvases")
+                # Check if the second subwidget is properly configured
+                main_texture_view = self._subwidget.get_context().get_current_texture().create_view()
+                second_texture_view = self._second_subwidget.get_context().get_current_texture().create_view()
+
+                self._visualizer.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=main_texture_view)
+                self._visualizer.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=second_texture_view)
+
+            self.request_draw(draw_both) 
+
+        else:
+            logger.info("🚫 Split-screen disabled")
+            # Hide the second subwidget
+            self._visualizer.disable_split_view()
+            self._second_subwidget.hide()
+
+        self._apply_resize()
+
     def _update_toolbar(self):
         if self._recorder is not None or len(self._all_instances)<2:
             self._link_action.setDisabled(True)
@@ -426,14 +528,25 @@ class VisualizerCanvas(VisualizerCanvasBase, WgpuCanvas):
 
 
     def request_draw(self, function=None):
-        # As a side effect, wgpu gui layer stores our function call, to enable it to be
-        # repainted later. But we want to distinguish such repaints and handle them
-        # differently, so we need to replace the function with our own
         def function_wrapper():
-            function()
-            self._subwidget.draw_frame = lambda: self._visualizer.draw(DrawReason.PRESENTATION_CHANGE)
+            if function:
+                function()
 
-        super().request_draw(function_wrapper)
+            # Check if the second subwidget is properly configured
+            if not hasattr(self._second_subwidget, "_device") or self._second_subwidget.get_context()._device is None:
+                logger.debug("Second Canvas is not properly configured. Skipping draw.")
+                return
+            
+            main_texture_view = self._subwidget.get_context().get_current_texture().create_view() # get the texture view of the main canvas
+            second_texture_view = self._second_subwidget.get_context().get_current_texture().create_view() # get the texture view of the second canvas
+            
+            '''self._subwidget.draw_frame = lambda: self._visualizer.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=main_texture_view)
+            self._second_subwidget.draw_frame = lambda: self._visualizer.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=second_texture_view)'''
+
+            self._visualizer.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=main_texture_view) # draw the main canvas
+            self._visualizer.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=second_texture_view) # draw the second canvas
+
+        super().request_draw(function_wrapper) 
 
     @classmethod
     def call_later(cls, delay, fn, *args):

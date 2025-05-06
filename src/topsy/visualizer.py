@@ -33,6 +33,7 @@ class VisualizerBase:
     def __init__(self, data_loader_class = loader.TestDataLoader, data_loader_args = (),
                  *, render_resolution = config.DEFAULT_RESOLUTION, periodic_tiling = False,
                  colormap_name = config.DEFAULT_COLORMAP, canvas_class = canvas.VisualizerCanvas):
+        self.split_screen_enabled = False  # Flag to track split-screen state
         self._colormap_name = colormap_name
         self._render_resolution = render_resolution
         self.crosshairs_visible = False
@@ -47,7 +48,7 @@ class VisualizerBase:
         self.last_mouse_x = 0
         self.last_mouse_y = 0
 
-        self.show_sphere = True
+        self.show_sphere = False
         self.canvas = canvas_class(visualizer=self, title="topsy")
 
         self._setup_wgpu()
@@ -621,6 +622,23 @@ class VisualizerBase:
         return props
 
 
+
+    def enable_split_view(self, second_canvas):
+        #Enable split-screen mode.
+        self.split_screen_enabled = True
+        logger.info("✅ Split view has been enabled in the visualizer.")
+
+        self.second_canvas = second_canvas # The second canvas to be used for split-screen mode
+
+
+        self.invalidate(DrawReason.PRESENTATION_CHANGE)
+        self.second_canvas.request_draw(lambda: self.draw(DrawReason.PRESENTATION_CHANGE, target_texture_view=self.second_canvas.get_context().get_current_texture().create_view()))
+
+    def disable_split_view(self):
+        #Disable split-screen mode.
+        self.split_screen_enabled = False
+        logger.info("🚫 Split view has been disabled in the visualizer.")
+        self.invalidate(DrawReason.PRESENTATION_CHANGE)
 
 
 class Visualizer(view_synchronizer.SynchronizationMixin, VisualizerBase):
