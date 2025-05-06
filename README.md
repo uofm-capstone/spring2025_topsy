@@ -33,7 +33,8 @@ Functionality implemented during UofM Spring 2025 Capstone by our team
   - Movements are synced with each other
   - Can be toggled by pressing the "Split" button on the toolbar
 - iPython REPL
-  - test
+  - Do live debugging and coding with an iPython REPL integrated into Topsy
+  - When running Topsy, add the --repl flag: $ topsy file --repl
 - 3D Region Selection
   - Place a sphere within the visualization to get data about the particles within the sphere
   - Press the 'sphere' button on the toolbar to toggle
