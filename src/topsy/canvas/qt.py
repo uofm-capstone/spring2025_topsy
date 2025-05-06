@@ -460,8 +460,12 @@ class ParticleInfoPopup(QtWidgets.QWidget):
 
         self.setLayout(self.layout)
 
-    def update_info(self, properties):
-        """Update the popup with selected particle data."""
-        info_text = "\n".join([f"{key}: {value}" for key, value in properties.items()])
-        self.label.setText(info_text)
-        self.show()  # Show the window
+    def update_info(self, avg_properties):
+        """Display averaged particle properties."""
+        if not avg_properties:
+            self.label.setText("No particles found.")
+            return
+
+        lines = [f"{key}: {value:.4f}" for key, value in avg_properties.items()]
+        self.label.setText("\n".join(lines))
+        self.show()

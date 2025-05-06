@@ -66,7 +66,7 @@ class VisualizerCanvasBase:
 
         elif event['event_type'] == 'pointer_up':
             self.release_drag()
-
+            '''
             # Only process selection if the mouse was not moved significantly (i.e., a click)
             if not self._mouse_moved:
                 x, y = event['x'], event['y']
@@ -85,7 +85,7 @@ class VisualizerCanvasBase:
                     # Ensure we call the popup from the correct place
                     if hasattr(self._visualizer.canvas, "popup"):
                         self._visualizer.canvas.popup.update_info(properties)
-
+            '''
         else:
             pass
         super().handle_event(event)
@@ -121,12 +121,7 @@ class VisualizerCanvasBase:
         elif key == 'h':
             self._visualizer.reset_view()
         elif key == 'f':
-            if self._visualizer.show_sphere and hasattr(self._visualizer, "_sphere_overlay"):
-                center = self._visualizer._sphere_overlay._position
-                radius = self._visualizer._sphere_overlay._radius
-                particles = self._visualizer.find_particles_in_sphere(center, radius)
-                print(f"[SPHERE] Found {len(particles)} particles inside sphere")
-                print(particles)
+            self._visualizer.show_average_properties_in_sphere()
         elif key == '[':
             self._visualizer.shrink_sphere()
         elif key == ']':

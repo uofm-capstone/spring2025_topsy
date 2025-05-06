@@ -181,6 +181,22 @@ class VisualizerBase:
         self._sphere_overlay.set_position_and_radius(new_pos, self._sphere_overlay._radius)
         self.invalidate()
 
+    def show_average_properties_in_sphere(self):
+        """Find particles in sphere and show averaged properties in the popup."""
+        if not (self.show_sphere and hasattr(self, "_sphere_overlay")):
+            return
+
+        center = self._sphere_overlay._position
+        radius = self._sphere_overlay._radius
+        particles = self.find_particles_in_sphere(center, radius)
+        print(f"[SPHERE] Found {len(particles)} particles inside sphere")
+        print(particles)
+
+        if particles.shape[0] > 0:
+            avg_props = self.get_average_properties(particles)
+
+            if hasattr(self.canvas, "popup"):
+                self.canvas.popup.update_info(avg_props)
 
     @property
     def scale(self):
@@ -589,6 +605,21 @@ class VisualizerBase:
     def toggle_sphere_visibility(self, show):
         self.show_sphere = show
         self.invalidate()
+
+    def get_average_properties(self, selected_positions):
+        """Compute average mass, density, temperature for given positions."""
+        pos_all = self.data_loader.get_positions()
+        indices = np.flatnonzero((pos_all[:, None] == selected_positions).all(-1).any(1))
+
+        props = {}
+        for key in ["mass", "rho", "temp"]:
+            try:
+                values = self.data_loader.get_named_quantity(key)[indices]
+                props[key.capitalize()] = float(np.mean(values))
+            except Exception:
+                continue
+        return props
+
 
 
 
