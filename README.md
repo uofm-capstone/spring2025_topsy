@@ -35,5 +35,9 @@ Functionality implemented during UofM Spring 2025 Capstone by our team
 - iPython REPL
   - test
 - 3D Region Selection
-  - test
+  - Place a sphere within the visualization to get data about the particles within the sphere
+  - Press the 'sphere' button on the toolbar to toggle
+  - Move sphere with w,a,s,d,q,e keys
+  - Resize sphere with \[ and \] keys
+  - Show data properties within the sphere with f key
 
